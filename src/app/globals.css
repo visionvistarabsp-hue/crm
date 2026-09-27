@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-canvas text-ink antialiased;
+}
+
+@layer base {
+  /* Clay surfaces have no borders, so focus needs to be drawn explicitly.
+     An outline is used rather than a ring: the clay shadows below are composed
+     into `box-shadow`, which silently swallows Tailwind's ring layers. */
+  :focus-visible {
+    @apply outline-none;
+    outline: 3px solid theme('colors.primary.500');
+    outline-offset: 2px;
+  }
+  ::selection {
+    @apply bg-primary-200 text-primary-900;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl bg-surface shadow-clay;
+  }
+
+  /* Buttons read as soft, puffy blocks; primary keeps the brand hue. */
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-ink transition-all duration-150 active:shadow-clay-inset-sm disabled:cursor-not-allowed disabled:opacity-50 disabled:active:shadow-clay-sm;
+  }
+  .btn-primary {
+    @apply btn bg-primary-500 text-white shadow-clay-sm hover:bg-primary-600;
+  }
+  .btn-secondary {
+    @apply btn bg-surface shadow-clay-sm hover:bg-clay-deep;
+  }
+  .btn-danger {
+    @apply btn bg-rose-500 text-white shadow-clay-sm hover:bg-rose-600;
+  }
+  .btn-ghost {
+    @apply btn text-ink-muted hover:bg-clay-deep hover:text-ink;
+  }
+
+  /* Inputs sit *in* the surface, never on top of it. */
+  .input {
+    @apply w-full rounded-xl bg-clay-deep px-4 py-3 text-sm text-ink shadow-clay-inset-sm placeholder:text-ink-faint focus:ring-2 focus:ring-primary-500/60;
+  }
+
+  .th {
+    @apply whitespace-nowrap px-5 py-3.5 text-left text-xs font-bold uppercase tracking-wider text-ink-muted;
+  }
+  .td {
+    @apply px-5 py-4 text-sm text-ink;
+  }
+
+  /* Small pill buttons, icon buttons and the sidebar chips reuse these. */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-semibold transition-all;
+  }
+  .chip-clay {
+    @apply chip bg-surface text-ink-muted shadow-clay-xs hover:text-ink active:shadow-clay-inset-sm;
+  }
+
+  .section-label {
+    @apply mb-2 px-3 text-[11px] font-bold uppercase tracking-widest text-ink-faint;
+  }
+}

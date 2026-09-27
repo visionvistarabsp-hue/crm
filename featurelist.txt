@@ -1,0 +1,240 @@
+REAL ESTATE SALES CRM - FEATURE LIST
+Generated: 2026-09-27
+
+===============================================================================
+1. LEAD MANAGEMENT
+===============================================================================
+- Lead capture with phone, email and WhatsApp; at least one contact required
+- Lead stages: New, Contact Pending, Contacted, Qualified, Follow Up, Meeting,
+  Site Visit 1/2/3, Negotiation, Booking, Document Collection, Deal Completed,
+  Lost, Cancelled, Not Interested, Call Back Later, Wrong Number, Duplicate
+- Bulk create and bulk update
+- Assignment to a salesperson, with team/manager visibility rules
+- Duplicate detection with confidence scoring (exact phone, fuzzy name+phone)
+- Follow-ups: scheduled, due, overdue; one-click complete with outcome
+- Meetings and site visits logged against a lead
+- Document checklist per lead
+
+===============================================================================
+2. CUSTOMERS
+===============================================================================
+- Customer records with normalised phone and email
+- Conversion from lead to customer
+- Customer-to-booking history
+- Related-lead lookup from a booking
+
+===============================================================================
+3. PROJECTS & INVENTORY
+===============================================================================
+- Projects with tower and unit inventory
+- Unit status lifecycle: available, held, booked, sold
+- Pricing per unit, area and configuration
+- Unit-level availability and filtering
+
+===============================================================================
+4. BOOKINGS
+===============================================================================
+- Create a booking against a customer and unit
+- Booking number generation
+- Booking amount and sale value
+- Booking statuses incl. Cancellation Requested and Cancelled
+- Cancellation request with reason
+- Booking detail page with related lead, payments, cancellations
+
+===============================================================================
+5. PAYMENTS
+===============================================================================
+- Record payments against a booking
+- Methods: cash, cheque, bank transfer, UPI, card, NEFT, RTGS
+- Payment reference / UTR tracking
+- Payment status: pending, received, failed
+
+===============================================================================
+6. COLLECTIONS  [NEW]
+===============================================================================
+- Instalment plan per booking (milestone schedule)
+  - Each milestone: name, due date, percentage or amount, notes
+  - Plan totals: planned, received, outstanding
+  - Overdue count and next-due indicator
+- Payment allocation
+  - Oldest-due-first allocation by default
+  - Pin a payment to a specific milestone
+  - Unallocated-amount tracking (received but not yet applied)
+- Milestone status derivation: Pending, Partial, Paid, Waived
+  - Float-safe settlement check (paise drift absorbed)
+  - A waived milestone is never silently un-waived
+- RECEIPTS
+  - Auto-issued on every payment; idempotent
+  - Sequential receipt numbers (RCPT prefix)
+  - Printable receipt page with print / Save-as-PDF
+  - Amount in words (Indian format: crore, lakh, thousand)
+  - Receipt voiding with a mandatory recorded reason
+- RECEIVABLES REPORTING
+  - Total outstanding and total overdue
+  - Ageing buckets: Not due, 1-30, 31-60, 61-90, 90+ days
+  - Overdue instalment list, oldest first, with chase action
+  - Per-salesperson collection achievement
+- UI: /collections page + schedule card embedded in booking detail
+
+===============================================================================
+7. LOANS  [NEW]
+===============================================================================
+- Raise a loan against any active booking
+  - Applicant name and relation (self, spouse, father, mother, sibling, other)
+  - Bank, application number
+  - Loan type: home, plot, balloon, bridge
+  - Loan amount, margin, property valuation, interest rate, tenure, EMI
+- Lifecycle: Applied, Documents Pending, In Progress, Sanctioned, Disbursed,
+  Rejected, Closed
+- Guard rails
+  - Loan amount cannot exceed the sale value
+  - Cannot raise a loan against a cancelled booking
+  - Sanction date required before a disbursement can be recorded
+  - Rejected/closed loans cannot carry a disbursement date
+- Stuck detection
+  - 30-day per-stage threshold; SLA references: 21 days sanction, 45 disbursement
+  - Ageing restarts on each stage change
+  - Disbursed/rejected/closed loans are never reported as stuck
+  - Stuck loans sort to the top of the list
+- Pipeline reporting
+  - Open / stuck / disbursed counts
+  - Total disbursed and pending-disbursement value
+  - Value by stage and by bank
+  - "Bookings needing a loan" worklist
+- UI: /loans page + loan card embedded in booking detail
+
+===============================================================================
+8. TARGETS & FORECASTING  [NEW]
+===============================================================================
+- Monthly targets per salesperson, per period (YYYY-MM)
+- Metrics: booking value, collection value, lead count, booking count
+- Bulk target assignment
+- Achievement reporting
+  - Attainment %, remaining gap, capped progress bar
+  - "Not set" is distinguished from 0%
+  - Numeric strings from Postgres handled correctly
+  - Overachievement yields a zero gap, never a negative one
+- PIPELINE FORECAST
+  - Explicit per-stage probability table (auditable, not hidden constants)
+  - Weighted expected value vs. unweighted pipeline value
+  - Stale-lead discount: 14-day silence window, 50% discount
+    - Prevents the forecast rewarding lead hoarding
+  - Forecast broken down by stage
+- FOCUS QUEUE
+  - Cold deals first, biggest prize within each group
+  - "Work these next" list on /targets
+- UI: /targets page
+
+===============================================================================
+9. COMMISSIONS & PAYOUTS
+===============================================================================
+- Commission slabs by project / role
+- Commission calculation on bookings
+- Payout batches, transactions and payout dashboard
+- Refunds
+
+===============================================================================
+10. REPORTS
+===============================================================================
+- Sales reports
+- Cancellation reports
+- Per-salesperson performance
+- Collection (receivables) reports
+- Target achievement reporting
+
+===============================================================================
+11. AI ASSISTANT
+===============================================================================
+- Groq-powered lead briefing
+- Duplicate detection assistance
+- Natural-language assistant over CRM data
+- Automation rules on lead and follow-up events
+
+===============================================================================
+12. PLATFORM
+===============================================================================
+- Role-based access control with granular permissions
+  - targets.view / targets.manage
+  - collections.view / collections.manage
+  - receipts.issue
+  - loans.view / loans.manage
+- Audit log on all create / update actions
+- Background job queue (notifications, reminders, automations, syncs)
+- In-app notification centre
+- Global search
+- Password hashing and secure session cookies
+- Webhook lead intake (generic + Meta lead ads)
+- Drizzle ORM migrations with journal sanity assertions
+
+===============================================================================
+13. INTEGRATION STATUS  [CORRECTED]
+===============================================================================
+Honest status - a channel is only "Ready" when messages actually leave the app:
+
+- Meta (Facebook/Instagram) Ads .... READY
+  Incoming leads land via /api/webhooks/leads and /api/webhooks/meta/leads
+- WhatsApp Business ................. NOT BUILT
+  No outbound integration exists. WhatsApp can be logged as a follow-up touch
+  type, but nothing is sent from this app.
+- Email (SMTP) ...................... NOT BUILT
+  No SMTP transport. Notifications are written in-app and shown in the bell
+  menu; nothing is emailed.
+- Slack ............................. NOT BUILT
+  No outbound team alerts yet.
+
+(Previously all four were labelled "Ready", which overstated what the
+application actually does. Statuses above reflect verified code paths.)
+
+===============================================================================
+14. TEST COVERAGE
+===============================================================================
+193 tests passing across 10 files.
+
+- forecast.test.ts (28) - stage weights, stale discounting, period handling,
+  achievement arithmetic, focus queue ordering
+- collections.test.ts (24) - settlement, milestone status derivation, ageing
+  bands, allocation buckets, amount-in-words
+- loans.test.ts (21) - per-stage ageing, stuck detection, summary rollups
+- assistant.test.ts (49), aiBrief.test.ts (16), statusMachine.test.ts (11),
+  password.test.ts (12), duplicates.test.ts (8), utils.test.ts (11),
+  commissions.test.ts (13)
+
+Bugs found and fixed by these tests:
+- achievement() discarded every real target, because Postgres numeric strings
+  failed an isFinite() check
+- focusQueue read a non-existent "name" field, so the focus list showed
+  "Unnamed lead" for every row
+- achievement() returned a negative gap on overachievement
+- amountInWords() printed "one and undefined Paise" on a paise carry
+- amountInWords() printed "undefined Crore undefined Lakh" for negative amounts
+- isStuck() flagged every disbursed loan as stuck forever
+- loanCreateSchema rejected "raise a loan now" by demanding a date the
+  service already defaults to today
+
+===============================================================================
+15. VERIFICATION STATUS
+===============================================================================
+- TypeScript typecheck ......... PASS (0 errors)
+- ESLint ....................... PASS (0 warnings, 0 errors)
+- Vitest ....................... PASS (193/193, 10 files)
+- Production build ............. PASS
+- Live end-to-end .............. PASS (27/27 checks against real data)
+
+Live verification (npm run verify:features) exercised the real write path:
+- built an instalment plan on a live booking (0 rupee drift vs sale value)
+- recorded a part payment, allocation applied to the pinned milestone
+- receipt auto-issued as RCPT-0003, amount in words rendered correctly
+- printable receipt page renders with number and amount in words
+- ageing report showed the overdue milestone 255 days late
+- loan guard rails: oversize loan 422, disbursement without sanction 422
+- cancelled booking correctly refused a plan (422)
+
+Bugs found by the LIVE test that unit tests could not reach - these only
+surfaced once real rows existed in the database:
+- getCollectionsReport() crashed with "column projects.project_id does not
+  exist": a raw sql where was built against bookings.projectId inside a
+  projects query. Never fired while the table was empty.
+- getReceipt() had the identical latent bug, so no receipt could ever render
+- recordPayment() never called issueReceipt and hardcoded receiptNo: null, so
+  payments were recorded with no receipt despite the UI promising one
+

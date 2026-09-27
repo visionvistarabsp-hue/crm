@@ -1,0 +1,21 @@
+# --- dependency locks ---
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- env / secrets (never commit real values) ---
+# `.env*` rather than just `.env`, so strays like `.env.tmp` / `.env.production`
+# are ignored too; only the documented template is allowed back in.
+.env*
+!.env.example
+
+# --- misc ---
+.DS_Store
+*.log
+coverage/
+.vitest/
+.vercel/
+drizzle/
