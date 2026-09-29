@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { db } from './db';
 import { backgroundJobs, customers, followups, leads, paymentDue, users } from './db/schema';
 import { enqueueJobOnce, registerJobHandler, type JobHandler } from './queue';
-import { isValidEmail, resolveResendConfig, sendEmail } from './resend';
+import { isValidEmail, resolveEmailConfig, sendEmail } from './resend';
 import { getSetting } from './settings';
 
 const DEFAULT_TIME_ZONE = 'Asia/Kolkata';
@@ -341,10 +341,10 @@ export async function registerEmailHandler(): Promise<void> {
     if (!data?.to || !data?.text) {
       throw new Error('EMAIL job payload is missing a recipient or body');
     }
-    const config = await resolveResendConfig();
+    const config = await resolveEmailConfig();
     if (!config) {
       throw new Error(
-        'Resend is not configured; set RESEND_API_KEY or save an active Resend integration key',
+        'Email is not configured; set SMTP credentials or a Resend key (RESEND_API_KEY or an active integration)',
       );
     }
     await sendEmail(config, { to: data.to, subject: data.subject ?? 'CRM update', text: data.text });
@@ -369,7 +369,7 @@ export async function scanReminders(reference: Date = new Date()): Promise<ScanR
     emailConfigured: false,
   };
 
-  const config = await resolveResendConfig();
+  const config = await resolveEmailConfig();
   result.emailConfigured = config !== null;
   if (!config) return result;
 
@@ -580,6 +580,163 @@ export async function scanReminders(reference: Date = new Date()): Promise<ScanR
       // A false here means a concurrent scan won the race for this slot, so the
       // window is covered and counting it as notified would over-report.
       if (queued) result.agentsNotified += 1;
+      else result.skippedAlreadyQueued += 1;
+    }
+  }
+
+  return result;
+}
+
+export interface ClientPaymentScanResult {
+  /** EMAIL jobs actually inserted. */
+  remindersQueued: number;
+  /** Payments skipped because neither customer nor lead carries an address. */
+  skippedNoEmail: number;
+  /** Payments where the before/due email was already queued. */
+  skippedAlreadyQueued: number;
+  /** Payments whose due date has already passed here - no client reminder after the date. */
+  skippedPastDue: number;
+  emailConfigured: boolean;
+}
+
+/**
+ * Scan for client-facing payment reminders. Unlike the agent digest, each
+ * payment gets at most two emails, pinned to the reminder hour on the local
+ * calendar: one on `dueDate - 1` ("due tomorrow") and one on `dueDate` itself
+ * ("due today"). Payments that have already passed their due date are never
+ * emailed - chasing is the agent's job, and a late bill reminder to an already
+ * late client is noise. Idempotency rides on `digestKey` scoped per payment
+ * and send-type (`before` / `due`), so re-runs cannot double-email a client.
+ */
+export async function scanClientPaymentReminders(reference: Date = new Date()): Promise<ClientPaymentScanResult> {
+  const result: ClientPaymentScanResult = {
+    remindersQueued: 0,
+    skippedNoEmail: 0,
+    skippedAlreadyQueued: 0,
+    skippedPastDue: 0,
+    emailConfigured: false,
+  };
+
+  const config = await resolveEmailConfig();
+  result.emailConfigured = config !== null;
+  if (!config) return result;
+
+  const timeZone = await resolveAppTimeZone();
+  const hour = DEFAULT_REMINDER_HOUR;
+  const minute = DEFAULT_REMINDER_MINUTE;
+
+  const pending = await db
+    .select({
+      id: paymentDue.id,
+      amount: paymentDue.amount,
+      paidAmount: paymentDue.paidAmount,
+      dueDate: paymentDue.dueDate,
+      customerName: customers.name,
+      customerEmail: customers.email,
+      leadName: leads.name,
+      leadEmail: leads.email,
+    })
+    .from(paymentDue)
+    .leftJoin(customers, eq(paymentDue.customerId, customers.id))
+    .leftJoin(leads, eq(paymentDue.leadId, leads.id))
+    .where(
+      and(
+        inArray(paymentDue.status, ['PENDING', 'PARTIAL']),
+        OUTSTANDING_SQL,
+      ),
+    )
+    .orderBy(asc(paymentDue.dueDate));
+
+  const fmt = formatters(timeZone);
+  const senderName = config.fromName?.trim() || 'CRM';
+  const todayStart = zonedWallClock(reference, timeZone, 0, 0);
+
+  for (const row of pending) {
+    if (!hasOutstandingDue(row.amount, row.paidAmount)) continue;
+
+    // Both emails are anchored to the local calendar day the payment is due on,
+    // not to the exact instant it lands in the database.
+    const dueDayStart = zonedWallClock(row.dueDate, timeZone, 0, 0);
+    if (dueDayStart.getTime() < todayStart.getTime()) {
+      result.skippedPastDue += 1;
+      continue;
+    }
+
+    const to = (row.customerEmail ?? row.leadEmail ?? '').trim();
+    if (!isValidEmail(to)) {
+      result.skippedNoEmail += 1;
+      continue;
+    }
+
+    const party = (row.customerName ?? row.leadName ?? 'there').trim();
+    const label = outstandingLabel(fmt.money, toNumber(row.amount) ?? 0, toNumber(row.paidAmount) ?? 0);
+    const dueKey = localDateKey(row.dueDate, timeZone);
+
+    // "Due tomorrow" fires 24h before the due day, at the configured reminder
+    // hour; "due today" fires on the due day itself. Both are gated by
+    // `enqueueJobOnce`'s unique digestKey so a scan re-run cannot queue a
+    // second copy.
+    const beforeSendAt = zonedWallClock(
+      new Date(dueDayStart.getTime() - 86_400_000),
+      timeZone,
+      hour,
+      minute,
+    );
+    const dueSendAt = zonedWallClock(row.dueDate, timeZone, hour, minute);
+
+    const touches: { sendAt: Date; kind: 'before' | 'due'; subject: string; text: string }[] = [];
+    if (beforeSendAt.getTime() > reference.getTime()) {
+      touches.push({
+        sendAt: beforeSendAt,
+        kind: 'before',
+        subject: `Payment due tomorrow: ${label}`,
+        text: [
+          `Hi ${party},`,
+          '',
+          `A friendly reminder that a payment of ${label} is due tomorrow (${fmt.date(row.dueDate)}).`,
+          '',
+          'If you have already made this payment, please ignore this email. For any questions, reply to this email.',
+          '',
+          'Regards,',
+          senderName,
+        ].join('\n'),
+      });
+    }
+    touches.push({
+      sendAt: dueSendAt,
+      kind: 'due',
+      subject: `Payment due today: ${label}`,
+      text: [
+        `Hi ${party},`,
+        '',
+        `A friendly reminder that a payment of ${label} is due today (${fmt.date(row.dueDate)}).`,
+        '',
+        'If you have already made this payment, please ignore this email. For any questions, reply to this email.',
+        '',
+        'Regards,',
+        senderName,
+      ].join('\n'),
+    });
+
+    for (const touch of touches) {
+      const digestKey = `client-payment:${row.id}:${dueKey}:${touch.kind}`;
+      // The insert below is the real guard (ON CONFLICT DO NOTHING); this read
+      // only avoids a pointless write attempt on a re-scan.
+      const existing = await db.query.backgroundJobs.findFirst({
+        where: eq(backgroundJobs.digestKey, digestKey),
+        columns: { id: true },
+      });
+      if (existing) {
+        result.skippedAlreadyQueued += 1;
+        continue;
+      }
+
+      const queued = await enqueueJobOnce(
+        'EMAIL',
+        { to, subject: touch.subject, text: touch.text },
+        { runAt: touch.sendAt, priority: 2, maxAttempts: 3, digestKey },
+      );
+      if (queued) result.remindersQueued += 1;
       else result.skippedAlreadyQueued += 1;
     }
   }

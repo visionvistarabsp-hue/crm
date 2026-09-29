@@ -148,6 +148,7 @@ vi.mock('@/lib/leadAlerts', () => ({
     alerted.push(String(lead.id));
     return Promise.resolve();
   },
+  broadcastNewLeadToTeam: () => Promise.resolve({ emailed: 0, skippedNoEmail: 0 }),
 }));
 
 const { createLead } = await import('@/lib/services/leads');

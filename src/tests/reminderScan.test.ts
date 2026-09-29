@@ -97,7 +97,7 @@ vi.mock('@/lib/resend', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    resolveResendConfig: async () => ({
+    resolveEmailConfig: async () => ({
       apiKey: 're_test',
       from: 'crm@example.com',
       fromName: 'CRM',

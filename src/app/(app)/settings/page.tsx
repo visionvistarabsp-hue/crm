@@ -18,7 +18,7 @@ const CHECK_LABELS: Record<string, string> = {
   database: 'Database connection',
   encryptionKey: 'Encryption key (env)',
   meta: 'Meta / Facebook leads',
-  email: 'Email delivery (Resend)',
+  email: 'Email delivery (SMTP / Resend)',
   webhookSecret: 'Lead webhook secret',
   timezone: 'Timezone',
 };
@@ -142,7 +142,7 @@ export default function SettingsPage() {
       <Card>
         <CardHeader title="Integration keys" subtitle="Meta Webhook secret for lead capture" />
         <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-surface p-3 shadow-clay-sm">
-          <p className="text-xs text-ink-faint">Encrypted keys such as the Resend API key are managed separately.</p>
+          <p className="text-xs text-ink-faint">Encrypted keys such as the SMTP app password or Resend API key are managed separately.</p>
           <Link
             href="/settings/keys"
             className="shrink-0 text-sm font-semibold text-primary-700 hover:underline"
@@ -180,9 +180,9 @@ export default function SettingsPage() {
           <span>
             <span className="block font-medium">Email me about new leads</span>
             <span className="block text-sm opacity-70">
-              Turn this off and you stop receiving both the alert when a lead is assigned to you and
-              the later reminder to your manager. Separate from follow-up reminders, which are
-              controlled elsewhere.
+              Turn this off and you stop receiving the alert when a lead is assigned to you and
+              the later reminder to your manager. New-lead emails sent to the whole team are not
+              affected. Separate from follow-up reminders, which are controlled elsewhere.
             </span>
           </span>
         </label>

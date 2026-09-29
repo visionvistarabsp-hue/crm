@@ -215,12 +215,16 @@ export default function SettingsKeysPage() {
               ))}
 
               {item.plainLabels.map((field) => (
-                <Field key={field.key} label={field.label} hint="Optional — used to classify incoming leads">
+                <Field
+                  key={field.key}
+                  label={field.label}
+                  hint={isMeta ? 'Optional — used to classify incoming leads' : 'Optional'}
+                >
                   <Input
                     value={values[field.key] ?? ''}
                     onChange={(e) => setField(item.provider, field.key, e.target.value)}
-                    placeholder="numeric id"
-                    inputMode="numeric"
+                    placeholder={isMeta ? 'numeric id' : 'value'}
+                    inputMode={isMeta ? 'numeric' : undefined}
                     autoComplete="off"
                     className="font-mono"
                   />

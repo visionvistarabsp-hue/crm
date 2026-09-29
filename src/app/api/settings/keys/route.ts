@@ -47,6 +47,25 @@ const PROVIDER_SPECS = {
     ],
     requiredSecrets: ['pageToken', 'verifyToken', 'appSecret'],
   },
+  smtp: {
+    label: 'SMTP',
+    // Preferred outbound channel for agent digests and client reminder
+    // emails. Resend is only the fallback when no SMTP provider is active.
+    secrets: [
+      {
+        key: 'appPassword',
+        env: 'SMTP_APP_PASSWORD',
+        required: true,
+        label: 'App password',
+      },
+    ],
+    plain: [
+      { key: 'host', label: 'SMTP host' },
+      { key: 'port', label: 'Port (465 or 587)' },
+      { key: 'user', label: 'Username / email' },
+    ],
+    requiredSecrets: ['appPassword'],
+  },
 } as const satisfies Record<string, ProviderSpec>;
 
 const PROVIDERS = Object.keys(PROVIDER_SPECS) as ProviderName[];

@@ -23,9 +23,9 @@ const INTEGRATIONS: Array<{
     desc: 'Not connected. Follow-ups can be logged as a WhatsApp touch, but no messages are sent from this app.',
   },
   {
-    name: 'Email (Resend)',
+    name: 'Email (SMTP / Resend)',
     status: 'Ready',
-    desc: 'Automated emails (reminders, digests) are sent through Resend. Add your API key and sender under Settings → Integration keys.',
+    desc: 'Automated emails (reminders, digests, client payment alerts) go through SMTP when configured, with Resend as the fallback. Add your sender under Settings → Integration keys.',
     href: '/settings/keys',
   },
   {

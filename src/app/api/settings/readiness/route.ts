@@ -29,9 +29,10 @@ export const GET = withApi(async (actor): Promise<{ checks: Record<string, Check
     dbOk = false;
   }
 
-  const [metaRow, resendRow] = await Promise.all([
+  const [metaRow, resendRow, smtpRow] = await Promise.all([
     db.query.integrations.findFirst({ where: eq(integrations.provider, 'meta') }),
     db.query.integrations.findFirst({ where: eq(integrations.provider, 'resend') }),
+    db.query.integrations.findFirst({ where: eq(integrations.provider, 'smtp') }),
   ]);
 
   const metaUi =
@@ -47,6 +48,30 @@ export const GET = withApi(async (actor): Promise<{ checks: Record<string, Check
     !!resendRow?.isActive &&
     typeof resendRow.config?.apiKey === 'string' &&
     looksEncrypted(resendRow.config.apiKey);
+  const resendEnv = !!process.env.RESEND_API_KEY?.trim();
+
+  // SMTP is the preferred outbound channel; Resend is the fallback. A provider
+  // counts as configured only when it is active AND carrying a real secret
+  // (encrypted in the DB or present in env) plus its host.
+  const smtpUi =
+    !!smtpRow?.isActive &&
+    typeof smtpRow.config?.host === 'string' &&
+    smtpRow.config.host.trim().length > 0 &&
+    typeof smtpRow.config?.appPassword === 'string' &&
+    looksEncrypted(smtpRow.config.appPassword);
+  const smtpEnv =
+    !!process.env.SMTP_APP_PASSWORD?.trim() && !!process.env.SMTP_HOST?.trim();
+
+  const emailOk = smtpUi || smtpEnv || resendUi || resendEnv;
+  const emailSource: Check['source'] = smtpUi
+    ? 'ui'
+    : smtpEnv
+      ? 'env'
+      : resendUi
+        ? 'ui'
+        : resendEnv
+          ? 'env'
+          : 'none';
 
   const webhookSecret = await getSecretSetting(
     'integrations.meta_webhook_secret',
@@ -70,8 +95,9 @@ export const GET = withApi(async (actor): Promise<{ checks: Record<string, Check
         source: metaUi ? 'ui' : metaEnv ? 'env' : 'none',
       },
       email: {
-        ok: resendUi || !!process.env.RESEND_API_KEY?.trim(),
-        source: resendUi ? 'ui' : process.env.RESEND_API_KEY?.trim() ? 'env' : 'none',
+        ok: emailOk,
+        source: emailSource,
+        detail: smtpUi || smtpEnv ? 'SMTP' : resendUi || resendEnv ? 'Resend' : undefined,
       },
       webhookSecret: {
         ok: webhookSecret !== null,

@@ -3,6 +3,7 @@ import { db } from './db';
 import { leads, users } from './db/schema';
 import { notifyUser } from './notifications';
 import { enqueueJobOnceDetailed } from './queue';
+import { isValidEmail } from './resend';
 
 /**
  * Real-time lead alerting.
@@ -197,6 +198,57 @@ export async function notifyOwnerOfNewLead(lead: LeadForAlert): Promise<void> {
   if (!owner) return;
 
   await deliver(owner, lead, 'NEW');
+}
+
+export interface TeamBroadcastResult {
+  /** Recipients an EMAIL job was queued for. */
+  emailed: number;
+  /** Active users skipped because they have no usable email address. */
+  skippedNoEmail: number;
+}
+
+/**
+ * Fan a new lead out to every active user's inbox.
+ *
+ * Deliberately separate from `notifyOwnerOfNewLead`: the owner page targets
+ * exactly one person who opted in, while this is a team-level broadcast that
+ * ignores the per-user `newLeadAlertsEnabled` mute - that column controls
+ * in-app page volume, not whether the whole team learns about a new enquiry.
+ * Only `isActive` users with a real address are emailed, idempotently per
+ * lead per user via `enqueueJobOnceDetailed`, so a replayed webhook cannot
+ * double-send. Best-effort like its sibling: a failure here must never fail
+ * or roll back the lead that triggered it.
+ */
+export async function broadcastNewLeadToTeam(lead: LeadForAlert): Promise<TeamBroadcastResult> {
+  const result: TeamBroadcastResult = { emailed: 0, skippedNoEmail: 0 };
+  const recipients = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(eq(users.isActive, true));
+
+  const body = leadSummary(lead);
+  for (const user of recipients) {
+    const email = (user.email ?? '').trim();
+    if (!isValidEmail(email)) {
+      result.skippedNoEmail += 1;
+      continue;
+    }
+    const outcome = await enqueueJobOnceDetailed(
+      'EMAIL',
+      { to: email, subject: `New lead: ${lead.name}`, text: body },
+      {
+        digestKey: `lead-broadcast:${lead.id}:${user.id}`,
+        priority: 2,
+        maxAttempts: 3,
+      },
+    );
+    if (outcome.status === 'failed') {
+      console.error('[leadAlerts] lead broadcast enqueue failed', outcome.error);
+      continue;
+    }
+    if (outcome.status === 'queued') result.emailed += 1;
+  }
+  return result;
 }
 
 /**

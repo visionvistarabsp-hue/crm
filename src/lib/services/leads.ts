@@ -21,7 +21,7 @@ import { writeAudit } from '../audit';
 import { assignLead } from './assignment';
 import { runAutomations } from './automation';
 import { notifyUser } from '../notifications';
-import { markLeadTouched, notifyOwnerOfNewLead } from '../leadAlerts';
+import { markLeadTouched, notifyOwnerOfNewLead, broadcastNewLeadToTeam } from '../leadAlerts';
 import { ACTIVITY_TYPES, LEAD_SOURCES, type LeadStatus } from '../constants';
 
 export interface LeadListFilters {
@@ -326,6 +326,9 @@ export async function createLead(
   // lead. Fires after assignment so the alert can resolve the owner.
   void notifyOwnerOfNewLead(created).catch((err) =>
     console.error('[leadAlerts] owner alert failed', err),
+  );
+  void broadcastNewLeadToTeam(created).catch((err) =>
+    console.error('[leadAlerts] team broadcast failed', err),
   );
 
   return { lead: created, duplicates, created: true };

@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { processDueJobs } from '@/lib/queue';
 import { registerReminderHandler } from '@/lib/notifications';
-import { registerEmailHandler, scanReminders } from '@/lib/reminders';
+import { registerEmailHandler, scanReminders, scanClientPaymentReminders } from '@/lib/reminders';
 import { scanUnclaimedLeads } from '@/lib/leadAlerts';
 import { registerIntegrationSyncHandler, scanIncomingLeads } from '@/lib/services/incomingLeadSync';
 
@@ -79,16 +79,34 @@ export async function GET(req: NextRequest) {
       console.error('[process-queue] incoming reconciliation scan failed', err);
     }
 
+    // Client-facing payment reminders, isolated the same way. They share the
+    // agent digest's EMAIL handler but are a separate scan so a fault in one
+    // must not take the other down.
+    let clientPayments: unknown = null;
+    let clientPaymentError: string | null = null;
+    try {
+      clientPayments = await scanClientPaymentReminders();
+    } catch (err) {
+      clientPaymentError = err instanceof Error ? err.message : String(err);
+      console.error('[process-queue] client payment reminder scan failed', err);
+    }
+
     const processed = await processDueJobs(25);
     return NextResponse.json({
-      ok: scanError === null && escalationError === null && incomingError === null,
+      ok:
+        scanError === null &&
+        escalationError === null &&
+        incomingError === null &&
+        clientPaymentError === null,
       processed,
       reminders,
       escalations,
       incoming,
+      clientPayments,
       scanError,
       escalationError,
       incomingError,
+      clientPaymentError,
     });
   } catch (err) {
     return NextResponse.json({ ok: false, error: String(err) }, { status: 500 });

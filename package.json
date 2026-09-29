@@ -49,6 +49,7 @@
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.38.3",
     "lucide-react": "^0.469.0",
+    "nodemailer": "^10.0.12",
     "papaparse": "^5.4.1",
     "pg": "^8.23.0",
     "react": "^19.3.0",
@@ -61,6 +62,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.17.10",
+    "@types/nodemailer": "^8.0.2",
     "@types/papaparse": "^5.3.15",
     "@types/react": "^19.0.3",
     "@types/react-dom": "^19.0.2",

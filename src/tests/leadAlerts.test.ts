@@ -111,7 +111,7 @@ vi.mock('@/lib/queue', () => ({
   },
 }));
 
-const { scanUnclaimedLeads, markLeadTouched, notifyOwnerOfNewLead } = await import('@/lib/leadAlerts');
+const { scanUnclaimedLeads, markLeadTouched, notifyOwnerOfNewLead, broadcastNewLeadToTeam } = await import('@/lib/leadAlerts');
 
 const lead = (over: Partial<Row> = {}): Row => ({
   id: 'lead-1',
@@ -324,5 +324,53 @@ describe('markLeadTouched', () => {
 
     await expect(markLeadTouched('lead-1')).resolves.toBeUndefined();
     spy.mockRestore();
+  });
+});
+
+describe('broadcastNewLeadToTeam', () => {
+  it('emails every active user under a per-user digest key', async () => {
+    candidateRows = [
+      { id: 'u1', email: 'riya@example.com' },
+      { id: 'u2', email: 'dev@example.com' },
+    ];
+
+    const result = await broadcastNewLeadToTeam(lead() as never);
+
+    expect(result.emailed).toBe(2);
+    expect(result.skippedNoEmail).toBe(0);
+    expect(enqueued).toHaveLength(2);
+    expect(enqueued.map((j) => j.digestKey).sort()).toEqual([
+      'lead-broadcast:lead-1:u1',
+      'lead-broadcast:lead-1:u2',
+    ]);
+    expect(enqueued[0].payload).toMatchObject({ to: 'riya@example.com', subject: 'New lead: Riya Shah' });
+  });
+
+  it('skips users with no usable email address', async () => {
+    candidateRows = [
+      { id: 'u1', email: 'riya@example.com' },
+      { id: 'u2', email: 'not-an-email' },
+      { id: 'u3', email: null },
+    ];
+
+    const result = await broadcastNewLeadToTeam(lead() as never);
+
+    expect(result.emailed).toBe(1);
+    expect(result.skippedNoEmail).toBe(2);
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0].digestKey).toBe('lead-broadcast:lead-1:u1');
+  });
+
+  it('ignores the per-user new-lead mute: the broadcast is team-wide', async () => {
+    // The muted user still gets the email; `newLeadAlertsEnabled` only gates
+    // the owner/manager pages, not the whole-team announcement.
+    candidateRows = [
+      { id: 'u1', email: 'riya@example.com', newLeadAlertsEnabled: false },
+    ];
+
+    const result = await broadcastNewLeadToTeam(lead() as never);
+
+    expect(result.emailed).toBe(1);
+    expect(enqueued[0].digestKey).toBe('lead-broadcast:lead-1:u1');
   });
 });
