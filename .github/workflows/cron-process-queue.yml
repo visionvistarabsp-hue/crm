@@ -1,0 +1,20 @@
+name: cron-process-queue
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  cron:
+    name: Trigger /api/internal/process-queue
+    runs-on: ubuntu-latest
+    steps:
+      - name: Hit process-queue endpoint
+        run: curl -fsS -o /dev/null -H "Authorization: Bearer $CRON_SECRET" "$APP_URL/api/internal/process-queue"
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          APP_URL: ${{ vars.APP_URL }}
