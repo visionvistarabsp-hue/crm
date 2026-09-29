@@ -4,6 +4,7 @@ import { leads, users } from './db/schema';
 import { notifyUser } from './notifications';
 import { enqueueJobOnceDetailed } from './queue';
 import { isValidEmail } from './resend';
+import { toE164 } from './whatsapp';
 
 /**
  * Real-time lead alerting.
@@ -30,6 +31,7 @@ const NOTIFY_TYPE = 'LEAD_RECEIVED';
 interface AlertRecipient {
   id: string;
   email: string;
+  phone: string | null;
   name: string;
   newLeadAlertsEnabled: boolean;
   managerId: string | null;
@@ -48,6 +50,7 @@ interface LeadForAlert {
 const RECIPIENT_COLUMNS = {
   id: true,
   email: true,
+  phone: true,
   name: true,
   newLeadAlertsEnabled: true,
   managerId: true,
@@ -205,48 +208,73 @@ export interface TeamBroadcastResult {
   emailed: number;
   /** Active users skipped because they have no usable email address. */
   skippedNoEmail: number;
+  /** Recipients a WHATSAPP job was queued for. */
+  whatsappSent: number;
+  /** Active users skipped because they have no usable phone number. */
+  skippedNoPhone: number;
 }
 
 /**
- * Fan a new lead out to every active user's inbox.
+ * Fan a new lead out to every active user's inbox and phone.
  *
  * Deliberately separate from `notifyOwnerOfNewLead`: the owner page targets
  * exactly one person who opted in, while this is a team-level broadcast that
  * ignores the per-user `newLeadAlertsEnabled` mute - that column controls
  * in-app page volume, not whether the whole team learns about a new enquiry.
- * Only `isActive` users with a real address are emailed, idempotently per
- * lead per user via `enqueueJobOnceDetailed`, so a replayed webhook cannot
+ * Only `isActive` users with a real address are emailed, and users with a
+ * usable number get a WhatsApp template message, both idempotently per lead
+ * per user via `enqueueJobOnceDetailed`, so a replayed webhook cannot
  * double-send. Best-effort like its sibling: a failure here must never fail
  * or roll back the lead that triggered it.
  */
 export async function broadcastNewLeadToTeam(lead: LeadForAlert): Promise<TeamBroadcastResult> {
-  const result: TeamBroadcastResult = { emailed: 0, skippedNoEmail: 0 };
+  const result: TeamBroadcastResult = { emailed: 0, skippedNoEmail: 0, whatsappSent: 0, skippedNoPhone: 0 };
   const recipients = await db
-    .select({ id: users.id, email: users.email })
+    .select({ id: users.id, email: users.email, phone: users.phone })
     .from(users)
     .where(eq(users.isActive, true));
 
   const body = leadSummary(lead);
   for (const user of recipients) {
     const email = (user.email ?? '').trim();
-    if (!isValidEmail(email)) {
+    if (isValidEmail(email)) {
+      const outcome = await enqueueJobOnceDetailed(
+        'EMAIL',
+        { to: email, subject: `New lead: ${lead.name}`, text: body },
+        {
+          digestKey: `lead-broadcast:${lead.id}:${user.id}`,
+          priority: 2,
+          maxAttempts: 3,
+        },
+      );
+      if (outcome.status === 'failed') {
+        console.error('[leadAlerts] lead broadcast enqueue failed', outcome.error);
+      } else if (outcome.status === 'queued') {
+        result.emailed += 1;
+      }
+    } else {
       result.skippedNoEmail += 1;
+    }
+
+    const phone = toE164(user.phone ?? '');
+    if (!phone) {
+      result.skippedNoPhone += 1;
       continue;
     }
-    const outcome = await enqueueJobOnceDetailed(
-      'EMAIL',
-      { to: email, subject: `New lead: ${lead.name}`, text: body },
+    const waOutcome = await enqueueJobOnceDetailed(
+      'WHATSAPP',
+      { to: phone, bodyParams: [body] },
       {
-        digestKey: `lead-broadcast:${lead.id}:${user.id}`,
+        digestKey: `lead-broadcast-wa:${lead.id}:${user.id}`,
         priority: 2,
         maxAttempts: 3,
       },
     );
-    if (outcome.status === 'failed') {
-      console.error('[leadAlerts] lead broadcast enqueue failed', outcome.error);
-      continue;
+    if (waOutcome.status === 'failed') {
+      console.error('[leadAlerts] lead WhatsApp broadcast enqueue failed', waOutcome.error);
+    } else if (waOutcome.status === 'queued') {
+      result.whatsappSent += 1;
     }
-    if (outcome.status === 'queued') result.emailed += 1;
   }
   return result;
 }

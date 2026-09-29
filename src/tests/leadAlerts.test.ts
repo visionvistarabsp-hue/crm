@@ -112,6 +112,7 @@ vi.mock('@/lib/queue', () => ({
 }));
 
 const { scanUnclaimedLeads, markLeadTouched, notifyOwnerOfNewLead, broadcastNewLeadToTeam } = await import('@/lib/leadAlerts');
+type TeamBroadcastResult = Awaited<ReturnType<typeof broadcastNewLeadToTeam>>;
 
 const lead = (over: Partial<Row> = {}): Row => ({
   id: 'lead-1',
@@ -328,49 +329,115 @@ describe('markLeadTouched', () => {
 });
 
 describe('broadcastNewLeadToTeam', () => {
-  it('emails every active user under a per-user digest key', async () => {
+  it('emails and WhatsApps every active user under per-user digest keys', async () => {
     candidateRows = [
-      { id: 'u1', email: 'riya@example.com' },
-      { id: 'u2', email: 'dev@example.com' },
+      { id: 'u1', email: 'riya@example.com', phone: '+919876543201' },
+      { id: 'u2', email: 'dev@example.com', phone: '98765 43210' },
     ];
 
     const result = await broadcastNewLeadToTeam(lead() as never);
 
     expect(result.emailed).toBe(2);
     expect(result.skippedNoEmail).toBe(0);
-    expect(enqueued).toHaveLength(2);
-    expect(enqueued.map((j) => j.digestKey).sort()).toEqual([
+    expect(result.whatsappSent).toBe(2);
+    expect(result.skippedNoPhone).toBe(0);
+    expect(enqueued).toHaveLength(4);
+
+    const emailJobs = enqueued.filter((j) => j.type === 'EMAIL');
+    const whatsappJobs = enqueued.filter((j) => j.type === 'WHATSAPP');
+    expect(emailJobs.map((j) => j.digestKey).sort()).toEqual([
       'lead-broadcast:lead-1:u1',
       'lead-broadcast:lead-1:u2',
     ]);
-    expect(enqueued[0].payload).toMatchObject({ to: 'riya@example.com', subject: 'New lead: Riya Shah' });
+    expect(whatsappJobs.map((j) => j.digestKey).sort()).toEqual([
+      'lead-broadcast-wa:lead-1:u1',
+      'lead-broadcast-wa:lead-1:u2',
+    ]);
+    expect(emailJobs[0].payload).toMatchObject({ to: 'riya@example.com', subject: 'New lead: Riya Shah' });
+    // '98765 43210' is 10 digits -> normalised to the app's default +91 country.
+    expect(whatsappJobs.map((j) => j.payload.to).sort()).toEqual([
+      '+919876543201',
+      '+919876543210',
+    ]);
+    // The WhatsApp body is the same lead summary text as the email, single
+    // {{1}} parameter.
+    for (const job of whatsappJobs) {
+      const bodyParams = job.payload.bodyParams as unknown[];
+      expect(bodyParams).toHaveLength(1);
+      expect(String(bodyParams[0])).toContain('Riya Shah');
+    }
   });
 
-  it('skips users with no usable email address', async () => {
+  it('skips users with no usable email but still WhatsApps them', async () => {
     candidateRows = [
-      { id: 'u1', email: 'riya@example.com' },
-      { id: 'u2', email: 'not-an-email' },
-      { id: 'u3', email: null },
+      { id: 'u1', email: 'riya@example.com', phone: '+919876543201' },
+      { id: 'u2', email: 'not-an-email', phone: '+919876543202' },
+      { id: 'u3', email: null, phone: '+919876543203' },
     ];
 
     const result = await broadcastNewLeadToTeam(lead() as never);
 
     expect(result.emailed).toBe(1);
     expect(result.skippedNoEmail).toBe(2);
-    expect(enqueued).toHaveLength(1);
-    expect(enqueued[0].digestKey).toBe('lead-broadcast:lead-1:u1');
+    expect(result.whatsappSent).toBe(3);
+    expect(result.skippedNoPhone).toBe(0);
+    expect(enqueued).toHaveLength(4);
+    expect(enqueued.filter((j) => j.type === 'EMAIL')[0].digestKey).toBe('lead-broadcast:lead-1:u1');
+  });
+
+  it('skips users whose phone cannot be turned into E.164', async () => {
+    candidateRows = [
+      { id: 'u1', email: 'riya@example.com', phone: '+919876543201' },
+      { id: 'u2', email: 'dev@example.com', phone: 'garbage' },
+      { id: 'u3', email: 'kav@example.com', phone: null },
+    ];
+
+    const result = await broadcastNewLeadToTeam(lead() as never);
+
+    expect(result.emailed).toBe(3);
+    expect(result.skippedNoEmail).toBe(0);
+    expect(result.whatsappSent).toBe(1);
+    expect(result.skippedNoPhone).toBe(2);
+    expect(enqueued.filter((j) => j.type === 'WHATSAPP').map((j) => j.digestKey)).toEqual([
+      'lead-broadcast-wa:lead-1:u1',
+    ]);
   });
 
   it('ignores the per-user new-lead mute: the broadcast is team-wide', async () => {
-    // The muted user still gets the email; `newLeadAlertsEnabled` only gates
-    // the owner/manager pages, not the whole-team announcement.
+    // The muted user still gets the email and WhatsApp; `newLeadAlertsEnabled`
+    // only gates the owner/manager pages, not the whole-team announcement.
     candidateRows = [
-      { id: 'u1', email: 'riya@example.com', newLeadAlertsEnabled: false },
+      { id: 'u1', email: 'riya@example.com', phone: '+919876543201', newLeadAlertsEnabled: false },
     ];
 
     const result = await broadcastNewLeadToTeam(lead() as never);
 
     expect(result.emailed).toBe(1);
+    expect(result.whatsappSent).toBe(1);
     expect(enqueued[0].digestKey).toBe('lead-broadcast:lead-1:u1');
+    expect(enqueued[1].digestKey).toBe('lead-broadcast-wa:lead-1:u1');
+  });
+
+  it('absorbs enqueue failures without throwing or rolling back', async () => {
+    candidateRows = [
+      { id: 'u1', email: 'riya@example.com', phone: '+919876543201' },
+      { id: 'u2', email: 'dev@example.com', phone: '+919876543202' },
+    ];
+    enqueueOutcome = { status: 'failed', error: new Error('queue insert failed') };
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    let result: TeamBroadcastResult;
+    try {
+      result = await broadcastNewLeadToTeam(lead() as never);
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    // A queue outage must never fail the lead that triggered the broadcast:
+    // nothing is thrown and nothing is double-counted.
+    expect(result!.emailed).toBe(0);
+    expect(result!.whatsappSent).toBe(0);
+    expect(result!.skippedNoEmail).toBe(0);
+    expect(result!.skippedNoPhone).toBe(0);
   });
 });

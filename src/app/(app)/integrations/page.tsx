@@ -19,8 +19,9 @@ const INTEGRATIONS: Array<{
 }> = [
   {
     name: 'WhatsApp Business',
-    status: 'Not built',
-    desc: 'Not connected. Follow-ups can be logged as a WhatsApp touch, but no messages are sent from this app.',
+    status: 'Ready',
+    desc: 'New leads are broadcast to every active team member on WhatsApp via the WhatsApp Business Cloud API (template message). Add your sender under Settings → Integration keys.',
+    href: '/settings/keys',
   },
   {
     name: 'Email (SMTP / Resend)',

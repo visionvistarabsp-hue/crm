@@ -66,6 +66,26 @@ const PROVIDER_SPECS = {
     ],
     requiredSecrets: ['appPassword'],
   },
+  whatsapp: {
+    label: 'WhatsApp Business',
+    secrets: [
+      {
+        key: 'accessToken',
+        env: 'WHATSAPP_ACCESS_TOKEN',
+        required: true,
+        label: 'System user access token',
+      },
+    ],
+    // The approved template must contain a {{1}} body placeholder; its text is
+    // replaced by the lead details when a new-lead broadcast fires.
+    plain: [
+      { key: 'phoneNumberId', label: 'Phone number ID' },
+      { key: 'fromPhone', label: 'Business phone (E.164)' },
+      { key: 'templateName', label: 'Notification template name' },
+      { key: 'templateLanguage', label: 'Template language code' },
+    ],
+    requiredSecrets: ['accessToken'],
+  },
 } as const satisfies Record<string, ProviderSpec>;
 
 const PROVIDERS = Object.keys(PROVIDER_SPECS) as ProviderName[];

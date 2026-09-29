@@ -4,6 +4,7 @@ import { registerReminderHandler } from '@/lib/notifications';
 import { registerEmailHandler, scanReminders, scanClientPaymentReminders } from '@/lib/reminders';
 import { scanUnclaimedLeads } from '@/lib/leadAlerts';
 import { registerIntegrationSyncHandler, scanIncomingLeads } from '@/lib/services/incomingLeadSync';
+import { registerWhatsAppHandler } from '@/lib/whatsapp';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,7 @@ function authorized(req: NextRequest): boolean {
 async function ensureHandlers(): Promise<void> {
   await registerReminderHandler();
   await registerEmailHandler();
+  await registerWhatsAppHandler();
   registerIntegrationSyncHandler();
 }
 

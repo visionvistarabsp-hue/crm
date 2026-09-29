@@ -29,10 +29,11 @@ export const GET = withApi(async (actor): Promise<{ checks: Record<string, Check
     dbOk = false;
   }
 
-  const [metaRow, resendRow, smtpRow] = await Promise.all([
+  const [metaRow, resendRow, smtpRow, whatsappRow] = await Promise.all([
     db.query.integrations.findFirst({ where: eq(integrations.provider, 'meta') }),
     db.query.integrations.findFirst({ where: eq(integrations.provider, 'resend') }),
     db.query.integrations.findFirst({ where: eq(integrations.provider, 'smtp') }),
+    db.query.integrations.findFirst({ where: eq(integrations.provider, 'whatsapp') }),
   ]);
 
   const metaUi =
@@ -61,6 +62,18 @@ export const GET = withApi(async (actor): Promise<{ checks: Record<string, Check
     looksEncrypted(smtpRow.config.appPassword);
   const smtpEnv =
     !!process.env.SMTP_APP_PASSWORD?.trim() && !!process.env.SMTP_HOST?.trim();
+
+  // WhatsApp needs both halves: a token to authenticate and a phone number id
+  // to send from. The plain template fields are optional and default on send.
+  const whatsappUi =
+    !!whatsappRow?.isActive &&
+    typeof whatsappRow.config?.accessToken === 'string' &&
+    looksEncrypted(whatsappRow.config.accessToken) &&
+    typeof whatsappRow.config?.phoneNumberId === 'string' &&
+    whatsappRow.config.phoneNumberId.trim().length > 0;
+  const whatsappEnv =
+    !!process.env.WHATSAPP_ACCESS_TOKEN?.trim() &&
+    !!process.env.WHATSAPP_PHONE_NUMBER_ID?.trim();
 
   const emailOk = smtpUi || smtpEnv || resendUi || resendEnv;
   const emailSource: Check['source'] = smtpUi
@@ -98,6 +111,10 @@ export const GET = withApi(async (actor): Promise<{ checks: Record<string, Check
         ok: emailOk,
         source: emailSource,
         detail: smtpUi || smtpEnv ? 'SMTP' : resendUi || resendEnv ? 'Resend' : undefined,
+      },
+      whatsapp: {
+        ok: whatsappUi || whatsappEnv,
+        source: whatsappUi ? 'ui' : whatsappEnv ? 'env' : 'none',
       },
       webhookSecret: {
         ok: webhookSecret !== null,
