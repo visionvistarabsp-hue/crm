@@ -317,6 +317,14 @@ export default function AssistantPanel() {
             >
               <Sparkles size={15} />
             </button>
+            <button
+              onClick={() => setOpen(false)}
+              className="chip-clay !rounded-lg !p-1.5"
+              aria-label="Minimize assistant"
+              title="Minimize"
+            >
+              <X size={15} />
+            </button>
           </div>
 
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">

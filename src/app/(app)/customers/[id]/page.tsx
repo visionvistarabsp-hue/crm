@@ -7,7 +7,7 @@ import { useApi } from '@/lib/useApi';
 import { ApiErrorView, fetcher } from '@/lib/fetcher';
 import { Badge, Button, Card, CardHeader, EmptyState, Spinner, Stat, StatusBadge, Textarea } from '@/components/ui';
 
-type TimelineKind = 'ACTIVITY' | 'BOOKING' | 'PAYMENT' | 'DOCUMENT' | 'LOAN';
+type TimelineKind = 'ACTIVITY' | 'BOOKING' | 'PAYMENT' | 'DOCUMENT';
 
 type TimelineEntry = {
   id: string;
@@ -32,12 +32,12 @@ type Customer360 = {
   projects: Array<{ id: string; name: string; code: string }>;
   summary: {
     bookingCount: number; activeBookings: number; totalSaleValue: number; totalReceived: number;
-    totalOutstanding: number; loanAmount: number; documentCount: number; pendingDocuments: number;
+    totalOutstanding: number; documentCount: number; pendingDocuments: number;
   };
   timeline: TimelineEntry[];
 };
 
-const KINDS: Array<TimelineKind | 'ALL'> = ['ALL', 'ACTIVITY', 'BOOKING', 'PAYMENT', 'DOCUMENT', 'LOAN'];
+const KINDS: Array<TimelineKind | 'ALL'> = ['ALL', 'ACTIVITY', 'BOOKING', 'PAYMENT', 'DOCUMENT'];
 
 const rupee = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
 
@@ -46,7 +46,6 @@ const KIND_TONE: Record<TimelineKind, 'blue' | 'green' | 'amber' | 'gray'> = {
   BOOKING: 'blue',
   PAYMENT: 'green',
   DOCUMENT: 'amber',
-  LOAN: 'blue',
 };
 
 function when(iso: string) {
@@ -194,10 +193,6 @@ export default function CustomerDetailPage() {
                 <div>
                   <p className="text-xs text-ink-faint">Pending</p>
                   <p className="font-medium text-ink">{s.pendingDocuments}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-xs text-ink-faint">Loan sanctioned</p>
-                  <p className="font-medium text-ink">{rupee.format(s.loanAmount)}</p>
                 </div>
               </div>
             </div>

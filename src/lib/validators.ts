@@ -1,15 +1,12 @@
 import { z } from 'zod';
 import {
   ACTIVITY_TYPES,
-  APPLICANT_RELATIONS,
   AUTOMATION_TRIGGERS,
   COMMISSION_TYPES,
   CANCELLATION_STATUS,
   DOCUMENT_TYPES,
   FOLLOWUP_TYPES,
   LEAD_SOURCES,
-  LOAN_STATUS,
-  LOAN_TYPES,
   MEETING_STATUS,
   MEETING_TYPES,
   MILESTONE_STATUS,
@@ -47,8 +44,6 @@ export const leadBaseSchema = z.object({
   adName: z.string().trim().max(120).optional().nullable(),
   projectId: z.string().optional().nullable(),
   budget: money.optional().nullable(),
-  financingNeeded: z.boolean().optional().nullable(),
-  preferredBank: z.string().trim().max(200).optional().nullable(),
   preferredLocation: z.string().trim().max(200).optional().nullable(),
   propertyType: z.enum(PROPERTY_TYPES).optional().nullable(),
   requirement: z.string().trim().max(1000).optional().nullable(),
@@ -354,48 +349,6 @@ export const receiptIssueSchema = z.object({
 
 export const receiptVoidSchema = z.object({
   reason: z.string().trim().min(3, 'A reason is required to void a receipt').max(500),
-});
-
-// ---------------------------------------------------------------- Home loans
-export const loanCreateSchema = z
-  .object({
-    bookingId: z.string().min(1),
-    applicantName: z.string().trim().max(200).optional().nullable(),
-    applicantRelation: z.enum(APPLICANT_RELATIONS).optional().nullable(),
-    bankName: z.string().trim().max(200).optional().nullable(),
-    applicationNo: z.string().trim().max(120).optional().nullable(),
-    loanType: z.enum(LOAN_TYPES).default('HOME'),
-    loanAmount: money.optional().nullable(),
-    marginAmount: money.optional().nullable(),
-    propertyValuation: money.optional().nullable(),
-    interestRate: z.number().min(0).max(100).optional().nullable(),
-    tenureMonths: z.number().int().min(1).max(600).optional().nullable(),
-    emi: money.optional().nullable(),
-    status: z.enum(LOAN_STATUS).default('APPLIED'),
-    applicationDate: isoDate.optional(),
-    sanctionDate: isoDate.optional().nullable(),
-    disbursementDate: isoDate.optional().nullable(),
-    remarks: z.string().trim().max(2000).optional().nullable(),
-  });
-  // No refine demanding a date: createLoan stamps applicationDate with today
-  // when it is absent, so "raise a loan right now" has to be a valid request.
-
-export const loanUpdateSchema = z.object({
-  applicantName: z.string().trim().max(200).optional().nullable(),
-  applicantRelation: z.enum(APPLICANT_RELATIONS).optional().nullable(),
-  bankName: z.string().trim().max(200).optional().nullable(),
-  applicationNo: z.string().trim().max(120).optional().nullable(),
-  loanType: z.enum(LOAN_TYPES).optional(),
-  loanAmount: money.optional().nullable(),
-  marginAmount: money.optional().nullable(),
-  propertyValuation: money.optional().nullable(),
-  interestRate: z.number().min(0).max(100).optional().nullable(),
-  tenureMonths: z.number().int().min(1).max(600).optional().nullable(),
-  emi: money.optional().nullable(),
-  status: z.enum(LOAN_STATUS).optional(),
-  sanctionDate: isoDate.optional().nullable(),
-  disbursementDate: isoDate.optional().nullable(),
-  remarks: z.string().trim().max(2000).optional().nullable(),
 });
 
 // ---------------------------------------------------------------- Documents

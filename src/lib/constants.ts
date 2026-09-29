@@ -189,45 +189,6 @@ export const PAYMENT_METHODS = ['CASH', 'CHEQUE', 'BANK_TRANSFER', 'UPI', 'CARD'
 export const MILESTONE_STATUS = ['PENDING', 'PARTIAL', 'PAID', 'WAIVED'] as const;
 export type MilestoneStatus = (typeof MILESTONE_STATUS)[number];
 
-/** Loan lifecycle. Terminal states are REJECTED and CLOSED. */
-export const LOAN_STATUS = [
-  'APPLIED',
-  'DOCUMENTS_PENDING',
-  'IN_PROGRESS',
-  'SANCTIONED',
-  'DISBURSED',
-  'REJECTED',
-  'CLOSED',
-] as const;
-export type LoanStatus = (typeof LOAN_STATUS)[number];
-
-export const LOAN_TYPES = ['HOME', 'PLOT', 'BALLOON', 'BRIDGE'] as const;
-export type LoanType = (typeof LOAN_TYPES)[number];
-
-export const APPLICANT_RELATIONS = [
-  'SELF',
-  'SPOUSE',
-  'FATHER',
-  'MOTHER',
-  'BROTHER',
-  'SISTER',
-  'SON',
-  'DAUGHTER',
-  'BUSINESS_PARTNER',
-  'OTHER',
-] as const;
-
-/** Loan stages that still need someone to push them along. */
-export const OPEN_LOAN_STATUSES: LoanStatus[] = [
-  'APPLIED',
-  'DOCUMENTS_PENDING',
-  'IN_PROGRESS',
-  'SANCTIONED',
-];
-
-/** Terminal loan stages - these should never appear in a "needs action" list. */
-export const CLOSED_LOAN_STATUSES: LoanStatus[] = ['REJECTED', 'CLOSED'];
-
 /** Receivables ageing buckets, in days past due. */
 export const AGING_BUCKETS = [
   { key: 'current', label: 'Not due', min: -Infinity, max: 0 },
@@ -321,10 +282,8 @@ export type Permission =
   | 'targets.manage'
   | 'collections.view'
   | 'collections.manage'
-  | 'receipts.issue'
+| 'receipts.issue'
   | 'payments.record'
-  | 'loans.view'
-  | 'loans.manage'
   | 'commissions.manage'
   | 'commissions.approve'
   | 'payouts.manage'
@@ -349,7 +308,6 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'documents.manage', 'documents.verify', 'documents.download',
     'accounts.view', 'commissions.manage', 'commissions.approve', 'payouts.manage',
     'targets.view', 'targets.manage', 'collections.view', 'collections.manage', 'receipts.issue', 'payments.record',
-    'loans.view', 'loans.manage',
     'reports.view', 'team.manage', 'integrations.manage', 'automation.manage', 'settings.manage', 'audit.view',
     'search.global', 'users.view',
   ],
@@ -362,7 +320,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'bookings.view', 'bookings.manage', 'bookings.cancel',
     'documents.manage', 'documents.download',
     'accounts.view', 'commissions.manage',
-    'targets.view', 'targets.manage', 'collections.view', 'receipts.issue', 'payments.record', 'loans.view', 'loans.manage',
+    'targets.view', 'targets.manage', 'collections.view', 'receipts.issue', 'payments.record',
     'reports.view', 'search.global', 'users.view',
   ],
   TEAM_LEADER: [
@@ -372,7 +330,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'customers.view', 'customers.create', 'customers.update',
     'bookings.view', 'bookings.manage',
     'documents.manage', 'documents.download',
-    'accounts.view', 'targets.view', 'collections.view', 'loans.view',
+    'accounts.view', 'targets.view', 'collections.view',
     'reports.view', 'search.global', 'users.view',
   ],
   SALES_EXECUTIVE: [
@@ -383,7 +341,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'bookings.view',
     'documents.manage', 'documents.download',
     'accounts.view',
-    'targets.view', 'collections.view', 'loans.view', 'payments.record',
+    'targets.view', 'collections.view', 'payments.record',
     'search.global',
   ],
   DOCUMENT_MANAGER: [
@@ -392,12 +350,12 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ACCOUNTS: [
     'leads.view', 'customers.view', 'projects.manage', 'units.manage',
     'bookings.view', 'accounts.view', 'commissions.manage', 'commissions.approve', 'payouts.manage',
-    'targets.view', 'collections.view', 'collections.manage', 'receipts.issue', 'payments.record', 'loans.view', 'loans.manage',
+    'targets.view', 'collections.view', 'collections.manage', 'receipts.issue', 'payments.record',
     'reports.view', 'search.global', 'users.view',
   ],
   VIEW_ONLY: [
     'leads.view', 'customers.view', 'bookings.view', 'accounts.view',
-    'targets.view', 'collections.view', 'loans.view',
+    'targets.view', 'collections.view',
     'reports.view', 'search.global',
   ],
 };

@@ -6,7 +6,6 @@ import {
   customers,
   documents,
   leads,
-  loans,
   payments,
   projects,
   users,
@@ -15,7 +14,7 @@ import { ApiError, type Actor } from '@/lib/api';
 import { resolveVisibleUserIds } from '@/lib/api';
 import { writeAudit } from '@/lib/audit';
 
-export type TimelineKind = 'ACTIVITY' | 'BOOKING' | 'PAYMENT' | 'DOCUMENT' | 'LOAN';
+export type TimelineKind = 'ACTIVITY' | 'BOOKING' | 'PAYMENT' | 'DOCUMENT';
 
 export interface TimelineEntry {
   id: string;
@@ -75,7 +74,6 @@ export interface Customer360 {
     totalSaleValue: number;
     totalReceived: number;
     totalOutstanding: number;
-    loanAmount: number;
     documentCount: number;
     pendingDocuments: number;
   };
@@ -85,7 +83,7 @@ export interface Customer360 {
 /**
  * Everything about one customer in a single call: identity, the inventory they
  * are attached to, money position, and a merged history across bookings,
- * payments, documents, loans and free-form notes.
+ * payments, documents and free-form notes.
  */
 export async function getCustomer360(actor: Actor, id: string): Promise<Customer360> {
   const customer = await db.query.customers.findFirst({
@@ -107,7 +105,7 @@ export async function getCustomer360(actor: Actor, id: string): Promise<Customer
     throw new ApiError(404, 'Customer not found');
   }
 
-  const [bookingRows, paymentRows, documentRows, loanRows, activityRows] = await Promise.all([
+  const [bookingRows, paymentRows, documentRows, activityRows] = await Promise.all([
     db.query.bookings.findMany({
       where: eq(bookings.customerId, id),
       columns: {
@@ -134,11 +132,6 @@ export async function getCustomer360(actor: Actor, id: string): Promise<Customer
       columns: { id: true, documentType: true, fileName: true, verificationStatus: true, createdAt: true, uploadedById: true },
       with: { uploader: { columns: { id: true, name: true } } },
       orderBy: [desc(documents.createdAt)],
-    }),
-    db.query.loans.findMany({
-      where: eq(loans.customerId, id),
-      columns: { id: true, loanType: true, bankName: true, loanAmount: true, status: true, createdAt: true, applicationNo: true },
-      orderBy: [desc(loans.createdAt)],
     }),
     db.query.customerActivities.findMany({
       where: eq(customerActivities.customerId, id),
@@ -209,18 +202,7 @@ export async function getCustomer360(actor: Actor, id: string): Promise<Customer
       actorName: d.uploader?.name ?? null,
       at: d.createdAt,
     })),
-    ...loanRows.map((l) => ({
-      id: `lon-${l.id}`,
-      kind: 'LOAN' as const,
-      title: `Loan ${l.loanType.toLowerCase()}`,
-      detail: [l.bankName, l.applicationNo].filter(Boolean).join(' - ') || null,
-      amount: toNumber(l.loanAmount),
-      status: l.status,
-      refId: l.id,
-      actorName: null,
-      at: l.createdAt,
-    })),
-  ];
+    ];
 
   return {
     customer: { ...(customer as typeof customers.$inferSelect), ownerName: customer.owner?.name ?? null },
@@ -234,7 +216,6 @@ export async function getCustomer360(actor: Actor, id: string): Promise<Customer
       totalSaleValue,
       totalReceived,
       totalOutstanding: Math.max(0, totalSaleValue - totalReceived),
-      loanAmount: loanRows.reduce((sum, l) => sum + toNumber(l.loanAmount), 0),
       documentCount: documentRows.length,
       pendingDocuments: documentRows.filter((d) => d.verificationStatus === 'PENDING').length,
     },

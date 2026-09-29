@@ -71,6 +71,13 @@
       "when": 1790680098958,
       "tag": "0009_left_pandemic",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790681463476,
+      "tag": "0010_chilly_reavers",
+      "breakpoints": true
     }
   ]
 }

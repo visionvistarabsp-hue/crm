@@ -177,12 +177,7 @@ export const leads = pgTable('leads', {
   campaign: text('campaign'),
   adName: text('ad_name'),
   projectId: text('project_id').references(() => projects.id),
-  budget: money('budget'),
-  // Financing intent, captured at enquiry time. Buyers who need a home loan
-  // convert on a different clock and stall differently, so sales needs to
-  // filter on this before the booking even exists.
-  financingNeeded: boolean('financing_needed').notNull().default(false),
-  preferredBank: text('preferred_bank'),
+budget: money('budget'),
   preferredLocation: text('preferred_location'),
   propertyType: text('property_type'),
   requirement: text('requirement'),
@@ -930,62 +925,7 @@ export const paymentMilestones = pgTable(
     index('idx_milestones_status').on(t.status),
   ],
 );
-
-// ------------------------------------------------------------------
-// Home loan / financing
-// ------------------------------------------------------------------
-
-/**
- * Financing attached to a booking. Most Indian buyers pay through a mortgage,
- * so the sale is not complete until the loan is disbursed - but nothing between
- * "application filed" and "cheque to the builder" used to be visible anywhere.
- *
- * Loan documents are not duplicated here: `documents` already supports
- * LOAN_DOCUMENT / BANK_DOCUMENT against a bookingId.
- */
-export const loans = pgTable(
-  'loans',
-  {
-    id: id(),
-    bookingId: text('booking_id')
-      .notNull()
-      .references(() => bookings.id, { onDelete: 'cascade' }),
-    customerId: text('customer_id')
-      .notNull()
-      .references(() => customers.id, { onDelete: 'cascade' }),
-    /** Co-applicant / spouse / sibling, for joint mortgages. */
-    applicantName: text('applicant_name'),
-    applicantRelation: text('applicant_relation'),
-    bankName: text('bank_name'),
-    applicationNo: text('application_no'),
-    loanType: text('loan_type').notNull().default('HOME'), // HOME | PLOT | BALLOON | BRIDGE
-    loanAmount: money('loan_amount').notNull().default('0'),
-    marginAmount: money('margin_amount'),
-    propertyValuation: money('property_valuation'),
-    interestRate: numeric('interest_rate', { precision: 5, scale: 3 }),
-    tenureMonths: integer('tenure_months'),
-    emi: money('emi'),
-    status: text('status').notNull().default('APPLIED'),
-    applicationDate: timestamp('application_date', { withTimezone: true }).notNull(),
-    sanctionDate: timestamp('sanction_date', { withTimezone: true }),
-    /** Lender releases money against construction milestones. */
-    disbursementDate: timestamp('disbursement_date', { withTimezone: true }),
-    closedAt: timestamp('closed_at', { withTimezone: true }),
-    remarks: text('remarks'),
-    meta: jsonb('meta').$type<Record<string, unknown>>().default({}),
-    createdById: text('created_by_id').references(() => users.id),
-    createdAt: now(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (t) => [
-    index('idx_loans_booking').on(t.bookingId),
-    index('idx_loans_customer').on(t.customerId),
-    index('idx_loans_status').on(t.status),
-    index('idx_loans_bank').on(t.bankName),
-    index('idx_loans_applied').on(t.applicationDate),
-  ],
-);
-
+ 
 // ------------------------------------------------------------------
 // Relations
 // ------------------------------------------------------------------
@@ -1036,7 +976,6 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   bookings: many(bookings),
   documents: many(documents),
   salesTargets: many(salesTargets),
-  loans: many(loans),
   activities: many(customerActivities),
 }));
 
@@ -1051,16 +990,10 @@ export const bookingsRelations = relations(bookings, ({ one, many }) => ({
   cancellations: many(cancellations),
   commissionSnapshots: many(commissionSnapshots),
   milestones: many(paymentMilestones),
-  loans: many(loans),
 }));
 
 export const paymentMilestonesRelations = relations(paymentMilestones, ({ one }) => ({
   booking: one(bookings, { fields: [paymentMilestones.bookingId], references: [bookings.id] }),
-}));
-
-export const loansRelations = relations(loans, ({ one }) => ({
-  booking: one(bookings, { fields: [loans.bookingId], references: [bookings.id] }),
-  customer: one(customers, { fields: [loans.customerId], references: [customers.id] }),
 }));
 
 export const salesTargetsRelations = relations(salesTargets, ({ one }) => ({
@@ -1153,4 +1086,3 @@ export type AssistantConversation = typeof assistantConversations.$inferSelect;
 export type AssistantMessage = typeof assistantMessages.$inferSelect;
 export type SalesTarget = typeof salesTargets.$inferSelect;
 export type PaymentMilestone = typeof paymentMilestones.$inferSelect;
-export type Loan = typeof loans.$inferSelect;

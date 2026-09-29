@@ -7,7 +7,7 @@ import { useApi } from '@/lib/useApi';
 import { ApiErrorView, fetcher } from '@/lib/fetcher';
 import { Badge, Button, Card, CardHeader, Dialog, EmptyState, Field, Input, Menu, Spinner, StatusBadge } from '@/components/ui';
 import CollectionScheduleCard from '@/components/CollectionScheduleCard';
-import LoanCard from '@/components/LoanCard';
+
 
 type BookingDetail = {
   id: string; bookingNo: string; status: string; bookingDate: string; bookingAmount: string | null;
@@ -78,8 +78,6 @@ export default function BookingDetailPage() {
           </Card>
 
           <CollectionScheduleCard bookingId={b.id} />
-
-          <LoanCard bookingId={b.id} saleValue={b.saleValue} />
 
           <Card>
             <CardHeader title="Cancellations" />

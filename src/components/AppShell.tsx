@@ -11,7 +11,6 @@ import {
   CalendarDays,
   FileText,
   Inbox,
-  Landmark,
   LayoutDashboard,
   Menu,
   Plug,
@@ -53,7 +52,6 @@ const NAV: Array<{ section: string; items: Array<{ href: string; label: string; 
     items: [
       { href: '/targets', label: 'Targets & Forecast', icon: Target },
       { href: '/collections', label: 'Collections', icon: ReceiptIndianRupee },
-      { href: '/loans', label: 'Loans', icon: Landmark },
     ],
   },
   {
