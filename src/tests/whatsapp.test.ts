@@ -16,6 +16,8 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 
 /** The single integrations row `resolveWhatsAppConfig` reads. */
 let integrationRow: Record<string, unknown> | undefined;
+/** Rows recorded through `logOutboundMessage` (mocked `message_logs` insert). */
+let messageLogRows: Array<Record<string, unknown>>;
 /** Handler captured by the mocked `registerJobHandler`. */
 let whatsappHandler: ((payload: Record<string, unknown>) => Promise<void>) | undefined;
 const fetchMock = vi.fn();
@@ -27,6 +29,12 @@ vi.mock('@/lib/db', () => ({
         findFirst: async () => integrationRow,
       },
     },
+    insert: () => ({
+      values: async (values: Record<string, unknown>) => {
+        messageLogRows.push(values);
+        return [];
+      },
+    }),
   },
 }));
 
@@ -60,6 +68,7 @@ function okJson(id: string) {
 beforeEach(() => {
   integrationRow = undefined;
   whatsappHandler = undefined;
+  messageLogRows = [];
   fetchMock.mockReset();
   vi.stubGlobal('fetch', fetchMock);
   delete process.env.WHATSAPP_ACCESS_TOKEN;
@@ -263,13 +272,43 @@ describe('registerWhatsAppHandler', () => {
     await registerWhatsAppHandler();
 
     expect(whatsappHandler).toBeDefined();
-    await whatsappHandler!({ to: '+919876543210', bodyParams: ['summary'] });
+    await whatsappHandler!({ to: '+919876543210', bodyParams: ['summary'], leadId: 'lead-1', userId: 'u1' });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const init = fetchMock.mock.calls[0][1] as RequestInit;
     const body = JSON.parse(String(init.body)) as { to: string; template: { components: unknown[] } };
     expect(body.to).toBe('+919876543210');
     expect(body.template.components).toHaveLength(1);
+    // Successful send is recorded in the outbound message log, with the ids
+    // needed to trace it back to the lead and recipient.
+    expect(messageLogRows).toHaveLength(1);
+    expect(messageLogRows[0]).toMatchObject({
+      channel: 'WHATSAPP',
+      recipient: '+919876543210',
+      bodyText: 'summary',
+      status: 'SENT',
+      providerMessageId: 'wamid.1',
+      leadId: 'lead-1',
+      userId: 'u1',
+    });
+  });
+
+  it('records a FAILED log row and rethrows when the API rejects the send', async () => {
+    envConfig();
+    fetchMock.mockResolvedValueOnce(new Response('quota exceeded', { status: 429 }));
+    await registerWhatsAppHandler();
+
+    await expect(
+      whatsappHandler!({ to: '+919876543210', bodyParams: ['summary'], leadId: 'lead-1' }),
+    ).rejects.toThrow(/429/);
+    expect(messageLogRows).toHaveLength(1);
+    expect(messageLogRows[0]).toMatchObject({
+      channel: 'WHATSAPP',
+      status: 'FAILED',
+      recipient: '+919876543210',
+      leadId: 'lead-1',
+    });
+    expect(String(messageLogRows[0].error)).toContain('429');
   });
 
   it('throws on payload missing a recipient or body, so the queue retries', async () => {

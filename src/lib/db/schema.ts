@@ -762,6 +762,33 @@ export const backgroundJobs = pgTable('background_jobs', {
   uniqueIndex('idx_jobs_digest_key').on(t.digestKey),
 ]);
 
+/**
+ * Outbound message history: every email and WhatsApp message the app sends,
+ * one row per delivery attempt. `status` = SENT | FAILED; on a failure the
+ * queue retries the job, so a lead can legitimately have several FAILED rows
+ * followed by one SENT. Kept separate from `background_jobs` (which only
+ * stores the queued payload) so staff can see who was told what, when, and
+ * whether it actually went out. `leadId` links the row back to the lead that
+ * triggered the send, `userId` to the team member it was addressed to.
+ */
+export const messageLogs = pgTable('message_logs', {
+  id: id(),
+  channel: text('channel').notNull(), // EMAIL | WHATSAPP
+  recipient: text('recipient').notNull(), // email address or E.164 phone
+  subject: text('subject'),
+  bodyText: text('body_text'),
+  status: text('status').notNull(), // SENT | FAILED
+  providerMessageId: text('provider_message_id'),
+  leadId: text('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+  userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
+  error: text('error'),
+  createdAt: now(),
+}, (t) => [
+  index('idx_message_logs_channel_created').on(t.channel, t.createdAt),
+  index('idx_message_logs_lead').on(t.leadId),
+  index('idx_message_logs_recipient').on(t.recipient),
+]);
+
 // Simple key/value counter used to mint sequential business numbers.
 export const counters = pgTable('counters', {
   key: text('key').primaryKey(),

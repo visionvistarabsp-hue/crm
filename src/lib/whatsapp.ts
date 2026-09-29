@@ -3,6 +3,7 @@ import { db } from './db';
 import { integrations } from './db/schema';
 import { decryptSecret, looksEncrypted } from './secrets';
 import { registerJobHandler, type JobHandler } from './queue';
+import { logOutboundMessage } from './messageLog';
 
 /**
  * Meta Graph API version the WhatsApp Cloud API integration pins to. The
@@ -207,7 +208,31 @@ export async function registerWhatsAppHandler(): Promise<void> {
       );
     }
 
-    await sendWhatsAppMessage(config, { to, bodyParams });
+    const leadId = typeof data.leadId === 'string' ? data.leadId : undefined;
+    const userId = typeof data.userId === 'string' ? data.userId : undefined;
+    try {
+      const sent = await sendWhatsAppMessage(config, { to, bodyParams });
+      await logOutboundMessage({
+        channel: 'WHATSAPP',
+        recipient: to,
+        bodyText: bodyParams[0],
+        status: 'SENT',
+        providerMessageId: sent.id,
+        leadId,
+        userId,
+      });
+    } catch (err) {
+      await logOutboundMessage({
+        channel: 'WHATSAPP',
+        recipient: to,
+        bodyText: bodyParams[0],
+        status: 'FAILED',
+        leadId,
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
   };
   registerJobHandler('WHATSAPP', handler);
 }

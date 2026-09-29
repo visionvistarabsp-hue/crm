@@ -2,6 +2,7 @@ import { and, asc, eq, inArray, lte, sql } from 'drizzle-orm';
 import { db } from './db';
 import { backgroundJobs, customers, followups, leads, paymentDue, users } from './db/schema';
 import { enqueueJobOnce, registerJobHandler, type JobHandler } from './queue';
+import { logOutboundMessage } from './messageLog';
 import { isValidEmail, resolveEmailConfig, sendEmail } from './resend';
 import { getSetting } from './settings';
 
@@ -99,6 +100,10 @@ interface EmailJobPayload {
   subject: string;
   text: string;
   agentId?: string;
+  /** Set by lead broadcasts so the send links back to the lead that triggered it. */
+  leadId?: string;
+  /** Set by lead broadcasts to the recipient team member. */
+  userId?: string;
 }
 
 export function appTimeZone(): string {
@@ -347,7 +352,37 @@ export async function registerEmailHandler(): Promise<void> {
         'Email is not configured; set SMTP credentials or a Resend key (RESEND_API_KEY or an active integration)',
       );
     }
-    await sendEmail(config, { to: data.to, subject: data.subject ?? 'CRM update', text: data.text });
+
+    const message = {
+      to: data.to,
+      subject: data.subject ?? 'CRM update',
+      text: data.text,
+    };
+    try {
+      const sent = await sendEmail(config, message);
+      await logOutboundMessage({
+        channel: 'EMAIL',
+        recipient: message.to,
+        subject: message.subject,
+        bodyText: message.text,
+        status: 'SENT',
+        providerMessageId: sent.id,
+        leadId: data.leadId,
+        userId: data.userId,
+      });
+    } catch (err) {
+      await logOutboundMessage({
+        channel: 'EMAIL',
+        recipient: message.to,
+        subject: message.subject,
+        bodyText: message.text,
+        status: 'FAILED',
+        leadId: data.leadId,
+        userId: data.userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
   };
   registerJobHandler('EMAIL', handler);
 }

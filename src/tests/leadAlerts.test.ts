@@ -354,6 +354,12 @@ describe('broadcastNewLeadToTeam', () => {
       'lead-broadcast-wa:lead-1:u2',
     ]);
     expect(emailJobs[0].payload).toMatchObject({ to: 'riya@example.com', subject: 'New lead: Riya Shah' });
+    // Every queued send carries the lead and recipient ids so the message log
+    // can link the send back to who it concerned.
+    for (const job of enqueued) {
+      expect(job.payload).toMatchObject({ leadId: 'lead-1' });
+      expect(['u1', 'u2']).toContain(job.payload.userId);
+    }
     // '98765 43210' is 10 digits -> normalised to the app's default +91 country.
     expect(whatsappJobs.map((j) => j.payload.to).sort()).toEqual([
       '+919876543201',

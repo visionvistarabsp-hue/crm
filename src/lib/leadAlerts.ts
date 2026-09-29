@@ -240,7 +240,13 @@ export async function broadcastNewLeadToTeam(lead: LeadForAlert): Promise<TeamBr
     if (isValidEmail(email)) {
       const outcome = await enqueueJobOnceDetailed(
         'EMAIL',
-        { to: email, subject: `New lead: ${lead.name}`, text: body },
+        {
+          to: email,
+          subject: `New lead: ${lead.name}`,
+          text: body,
+          leadId: lead.id,
+          userId: user.id,
+        },
         {
           digestKey: `lead-broadcast:${lead.id}:${user.id}`,
           priority: 2,
@@ -263,7 +269,7 @@ export async function broadcastNewLeadToTeam(lead: LeadForAlert): Promise<TeamBr
     }
     const waOutcome = await enqueueJobOnceDetailed(
       'WHATSAPP',
-      { to: phone, bodyParams: [body] },
+      { to: phone, bodyParams: [body], leadId: lead.id, userId: user.id },
       {
         digestKey: `lead-broadcast-wa:${lead.id}:${user.id}`,
         priority: 2,
