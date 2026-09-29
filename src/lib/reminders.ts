@@ -3,6 +3,7 @@ import { db } from './db';
 import { backgroundJobs, customers, followups, leads, paymentDue, users } from './db/schema';
 import { enqueueJobOnce, registerJobHandler, type JobHandler } from './queue';
 import { isValidEmail, resolveResendConfig, sendEmail } from './resend';
+import { getSetting } from './settings';
 
 const DEFAULT_TIME_ZONE = 'Asia/Kolkata';
 const DEFAULT_REMINDER_HOUR = 9;
@@ -108,6 +109,22 @@ export function appTimeZone(): string {
     return tz;
   } catch {
     return DEFAULT_TIME_ZONE;
+  }
+}
+
+/**
+ * Timezone for the digest schedule, resolved DB-first so a new instance can be
+ * set from the Settings UI (`app.timezone`); falls back to APP_TIMEZONE / the
+ * default when nothing is saved.
+ */
+export async function resolveAppTimeZone(): Promise<string> {
+  const saved = (await getSetting<string>('app.timezone', '')).trim();
+  if (!saved) return appTimeZone();
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: saved });
+    return saved;
+  } catch {
+    return appTimeZone();
   }
 }
 
@@ -356,7 +373,7 @@ export async function scanReminders(reference: Date = new Date()): Promise<ScanR
   result.emailConfigured = config !== null;
   if (!config) return result;
 
-  const timeZone = appTimeZone();
+  const timeZone = await resolveAppTimeZone();
   const cutoff = endOfLocalDay(reference, timeZone);
   const paymentCutoff = new Date(cutoff.getTime() + PAYMENT_LOOKAHEAD_DAYS * 86_400_000);
   const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() || 'https://example.com';

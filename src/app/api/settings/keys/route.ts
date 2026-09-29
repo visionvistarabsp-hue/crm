@@ -39,12 +39,13 @@ const PROVIDER_SPECS = {
     secrets: [
       { key: 'pageToken', env: 'FB_PAGE_ACCESS_TOKEN', required: true, label: 'Page access token' },
       { key: 'verifyToken', env: 'META_LEADS_VERIFY_TOKEN', required: true, label: 'Webhook verify token' },
+      { key: 'appSecret', env: 'META_APP_SECRET', required: true, label: 'App secret' },
     ],
     plain: [
       { key: 'facebookPageId', label: 'Facebook page ID' },
       { key: 'instagramAccountId', label: 'Instagram business account ID' },
     ],
-    requiredSecrets: ['pageToken', 'verifyToken'],
+    requiredSecrets: ['pageToken', 'verifyToken', 'appSecret'],
   },
 } as const satisfies Record<string, ProviderSpec>;
 

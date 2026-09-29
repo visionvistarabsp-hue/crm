@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from './db';
 import { integrations } from './db/schema';
+import { getSetting } from './settings';
 import { decryptSecret, looksEncrypted } from './secrets';
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';
@@ -54,6 +55,28 @@ export async function resolveResendConfig(): Promise<ResendConfig | null> {
     row = undefined;
   }
 
+  // Instance-level overrides saved from the Settings UI beat both the
+  // integration row and the env defaults, so an admin can change the sender
+  // address without touching code or redeploying.
+  const [dbFromEmail, dbFromName] = await Promise.all([
+    getSetting<string>('email.from_email', ''),
+    getSetting<string>('email.from_name', ''),
+  ]);
+  const resolveFrom = (config?: Record<string, unknown>): string => {
+    const fromRow =
+      config && typeof config.fromEmail === 'string' && config.fromEmail.trim()
+        ? config.fromEmail.trim()
+        : null;
+    return fromRow || dbFromEmail.trim() || defaultFromEmail();
+  };
+  const resolveName = (config?: Record<string, unknown>): string => {
+    const fromRow =
+      config && typeof config.fromName === 'string' && config.fromName.trim()
+        ? config.fromName.trim()
+        : null;
+    return fromRow || dbFromName.trim() || defaultFromName();
+  };
+
   if (row?.isActive) {
     const config = (row.config ?? {}) as Record<string, unknown>;
     const stored = typeof config.apiKey === 'string' ? config.apiKey : null;
@@ -65,24 +88,14 @@ export async function resolveResendConfig(): Promise<ResendConfig | null> {
         apiKey = null;
       }
       if (apiKey) {
-        return {
-          apiKey,
-          fromEmail:
-            typeof config.fromEmail === 'string' && config.fromEmail.trim()
-              ? config.fromEmail.trim()
-              : defaultFromEmail(),
-          fromName:
-            typeof config.fromName === 'string' && config.fromName.trim()
-              ? config.fromName.trim()
-              : defaultFromName(),
-        };
+        return { apiKey, fromEmail: resolveFrom(config), fromName: resolveName(config) };
       }
     }
   }
 
   const envKey = process.env.RESEND_API_KEY?.trim();
   if (!envKey) return null;
-  return { apiKey: envKey, fromEmail: defaultFromEmail(), fromName: defaultFromName() };
+  return { apiKey: envKey, fromEmail: resolveFrom(), fromName: resolveName() };
 }
 
 /**

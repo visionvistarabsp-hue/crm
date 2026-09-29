@@ -21,6 +21,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx --env-file-if-exists=.env src/lib/db/seed.ts",
     "db:ensure-admin": "tsx --env-file-if-exists=.env src/lib/db/ensure-admin-cli.ts",
+    "provision:instance": "node scripts/provision-instance.mjs",
     "demo:check": "tsx --env-file-if-exists=.env scripts/demo-dataset-check.mts",
     "demo:check:db": "tsx --env-file-if-exists=.env scripts/demo-db-check.mts",
     "demo:verify": "npm run demo:check && npm run demo:check:db"

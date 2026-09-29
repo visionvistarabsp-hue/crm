@@ -34,13 +34,40 @@ Run behind a reverse proxy (Caddy/Nginx) with HTTPS. `APP_BASE_URL` must match t
 - [ ] `CRON_SECRET` set (32 random bytes, e.g. `openssl rand -hex 32`) — the job queue fails closed without it
 - [ ] `DATABASE_URL` points at the production Neon (pooled) endpoint
 - [ ] `R2_*` configured (document storage won't persist on local disk across instances)
-- [ ] `WEBHOOK_SECRET` set; documented in the provider's integration console
+- [ ] `WEBHOOK_SECRET` set *or* configured from Settings → Go-live checklist → Webhook secret (UI-set value wins; the env var is only a fallback). Documented in the provider's integration console
 - [ ] `SETTINGS_ENCRYPTION_KEY` set (32 bytes, e.g. `openssl rand -hex 32`) — required by Settings → Email keys; without it `PUT /api/settings/keys` returns `503` and nothing is stored
 - [ ] `RESEND_API_KEY` **or** a key saved in Settings → Email keys, if reminder digests are wanted
-- [ ] `APP_TIMEZONE` matches the business timezone (defaults to `Asia/Kolkata`)
+- [ ] `APP_TIMEZONE` matches the business timezone, *or* set from Settings → Go-live checklist → Timezone (defaults to `Asia/Kolkata`)
 - [ ] `SIMPLE_UI_ENABLED` deliberately set — it is `"false"` by default
 - [ ] `.env` is NOT in git (see `.gitignore`)
 - [ ] `NODE_ENV=production`
+
+## Multi-instance (white-label / Option A)
+
+Selling the same CRM to several places on one codebase: **one deployment per client**, each with its own database and env. The only config that must be in the environment is the bootstrap that the database itself cannot hold:
+
+| Env-only (bootstrap) | Why it cannot be a UI setting |
+| --- | --- |
+| `DATABASE_URL` | Settings live *in* the database — there is no place to store where the database is |
+| `SETTINGS_ENCRYPTION_KEY` | Master key for UI-saved secrets; storing it next to the ciphertext defeats the encryption |
+| `CRON_SECRET` | Guards `/api/internal/process-queue`; must be set before the queue can run |
+
+Everything else — Meta/Facebook tokens, Resend key, sender address, lead webhook secret, timezone — is managed from the UI per instance.
+
+Provision a new instance in one command:
+
+```bash
+npm run provision:instance   # writes .env.instance with generated keys
+```
+
+It prompts for the `DATABASE_URL` and instance name, generates `SETTINGS_ENCRYPTION_KEY` and `CRON_SECRET`, and prints the next steps:
+
+1. Copy `.env.instance` into the host's env (e.g. `cp .env.instance .env.local`)
+2. `npm run db:migrate`
+3. `npm run db:ensure-admin -- <admin-email>`
+4. Start the app, sign in, then finish setup from the **Settings → Go-live checklist** (webhook secret, timezone) and **Settings → Email keys / Keys** (Resend + Meta).
+
+A failed boot almost always means one of the bootstrap values is missing; the checklist card turns from amber to green as each part is configured. Per-instance optional env values (`EMAIL_FROM`, `EMAIL_FROM_NAME`, `APP_TIMEZONE`, `SIMPLE_UI_ENABLED`) are accepted by the script but never required.
 
 ## Reminder digests
 

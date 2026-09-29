@@ -11,6 +11,18 @@ type AutomationRule = {
   id: string; name: string; trigger?: string; actions?: AutomationAction[]; isActive: boolean;
 };
 
+type ReadinessCheck = { ok: boolean; source?: string; detail?: string };
+type Readiness = { checks: Record<string, ReadinessCheck> };
+
+const CHECK_LABELS: Record<string, string> = {
+  database: 'Database connection',
+  encryptionKey: 'Encryption key (env)',
+  meta: 'Meta / Facebook leads',
+  email: 'Email delivery (Resend)',
+  webhookSecret: 'Lead webhook secret',
+  timezone: 'Timezone',
+};
+
 /** `actions` is a free-form jsonb array, so no key inside it is guaranteed to be present. */
 function describeAction(a: AutomationAction): string {
   const label = typeof a.type === 'string' ? a.type : typeof a.action === 'string' ? a.action : '';
@@ -24,6 +36,20 @@ function describeTrigger(trigger?: string): string {
 export default function SettingsPage() {
   const { data, error, loading, reload } = useApi<{ items: AutomationRule[] }>('/api/automation-rules');
   const [workingId, setWorkingId] = useState<string | null>(null);
+
+  const readiness = useApi<Readiness>('/api/settings/readiness');
+  const [savingTimezone, setSavingTimezone] = useState(false);
+
+  const saveTimezone = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setSavingTimezone(true);
+    try {
+      const value = (e.currentTarget.elements.namedItem('timezone') as HTMLInputElement).value.trim();
+      await fetcher('/api/settings', { method: 'POST', body: JSON.stringify({ key: 'app.timezone', value }) });
+      await readiness.reload();
+    } catch (err) { alert((err as Error).message); }
+    finally { setSavingTimezone(false); }
+  };
 
   const toggle = async (id: string) => {
     setWorkingId(id);
@@ -47,6 +73,46 @@ export default function SettingsPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader title="Settings" subtitle="Automations, integration keys and preferences" />
+
+      <Card className="mb-6">
+        <CardHeader title="Go-live checklist" subtitle="What a fresh instance needs before leads can flow" />
+        {readiness.loading && !readiness.data && <div className="flex justify-center p-6"><Spinner /></div>}
+        <ApiErrorView error={readiness.error} onRetry={readiness.reload} />
+        {readiness.data && (
+          <div>
+            <div className="space-y-2">
+              {Object.entries(CHECK_LABELS).map(([key, label]) => {
+                const c = readiness.data?.checks[key];
+                return (
+                  <div key={key} className="flex items-center justify-between gap-3 rounded-2xl bg-surface p-3 shadow-clay-sm">
+                    <div className="flex items-center gap-2">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${c?.ok ? 'bg-primary-600' : 'bg-amber-500'}`} />
+                      <p className="text-sm font-medium text-ink">{label}</p>
+                    </div>
+                    <p className="text-xs text-ink-faint">
+                      {key === 'timezone' && c?.detail
+                        ? `${c.detail}${c.source && c.source !== 'default' ? ` (from ${c.source})` : ''}`
+                        : c?.ok
+                          ? `set via ${c.source ?? 'env'}`
+                          : 'not set'}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+            <form onSubmit={saveTimezone} className="mt-4 flex items-end gap-3">
+              <Field label="Timezone (IANA)" hint="Used for reminder and digest scheduling">
+                <Input
+                  name="timezone"
+                  defaultValue={readiness.data?.checks.timezone?.detail ?? ''}
+                  placeholder="Asia/Kolkata"
+                />
+              </Field>
+              <Button type="submit" disabled={savingTimezone}>Save timezone</Button>
+            </form>
+          </div>
+        )}
+      </Card>
 
       <Card className="mb-6">
         <CardHeader title="Automation rules" subtitle="Triggers fire actions across the CRM" />
@@ -90,6 +156,7 @@ export default function SettingsPage() {
             e.preventDefault();
             const value = (e.currentTarget.elements.namedItem('secret') as HTMLInputElement).value;
             await fetcher('/api/settings', { method: 'POST', body: JSON.stringify({ key: 'integrations.meta_webhook_secret', value }) });
+            await readiness.reload();
             alert('Saved.');
           }}
         >

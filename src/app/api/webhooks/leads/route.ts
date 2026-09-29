@@ -1,6 +1,7 @@
 import { withApi } from '@/lib/handlers';
 import { db } from '@/lib/db';
 import { incomingLeads } from '@/lib/db/schema';
+import { getSecretSetting } from '@/lib/settings';
 import { webhookLeadSchema } from '@/lib/validators';
 import { aliasSourceRef, applyIncomingLead, enqueueSyncRetry } from '@/lib/services/incomingLeadSync';
 import { eq } from 'drizzle-orm';
@@ -9,9 +10,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // Provider webhook: normalize an external lead into the pipeline.
-// Protected by a shared secret when configured (WEBHOOK_SECRET).
+// Protected by a shared secret when configured. The secret can be set from the
+// Settings UI (saved under `integrations.meta_webhook_secret`) or, for older
+// deployments, via the WEBHOOK_SECRET env var; a UI-set value wins so a new
+// instance never needs a redeploy to wire up lead capture.
 export const POST = withApi(async (actor, req) => {
-  const secret = process.env.WEBHOOK_SECRET;
+  const secret = await getSecretSetting('integrations.meta_webhook_secret', process.env.WEBHOOK_SECRET);
   if (secret && req.headers.get('x-webhook-secret') !== secret) {
     return { error: { message: 'Invalid webhook secret' }, status: 403 };
   }

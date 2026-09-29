@@ -26,9 +26,15 @@ export const GET = withPublic(async (req: NextRequest) => {
   const verifyToken = params.get('hub.verify_token');
   const challenge = params.get('hub.challenge');
 
-  const expected = process.env.META_LEADS_VERIFY_TOKEN ?? '';
+  // Read through metaConfig() rather than process.env: an admin can rotate the
+  // verify token from Settings → Integration keys without a redeploy, and the
+  // env still wins when no integration row exists.
+  const { verifyToken: expected } = await metaConfig();
   if (!expected) {
-    return NextResponse.json({ error: { message: 'META_LEADS_VERIFY_TOKEN not configured in .env' } }, { status: 503 });
+    return NextResponse.json(
+      { error: { message: 'Webhook verify token not configured. Save it in Settings → Integration keys' } },
+      { status: 503 },
+    );
   }
   if (mode === 'subscribe' && verifyToken === expected && challenge) {
     return new NextResponse(challenge, { status: 200, headers: { 'Content-Type': 'text/plain' } });
