@@ -21,6 +21,7 @@ import { writeAudit } from '../audit';
 import { assignLead } from './assignment';
 import { runAutomations } from './automation';
 import { notifyUser } from '../notifications';
+import { markLeadTouched, notifyOwnerOfNewLead } from '../leadAlerts';
 import { ACTIVITY_TYPES, LEAD_SOURCES, type LeadStatus } from '../constants';
 
 export interface LeadListFilters {
@@ -204,8 +205,26 @@ export async function findDuplicateLeadsByIdentity(
 export async function createLead(
   actor: Actor,
   rawData: unknown,
-): Promise<{ lead: Lead; duplicates: Array<{ lead: { id: string; leadNo: string; name: string; phone: string | null; email: string | null }; rule: string }> }> {
+): Promise<{
+  lead: Lead;
+  duplicates: Array<{ lead: { id: string; leadNo: string; name: string; phone: string | null; email: string | null }; rule: string }>;
+  /**
+   * False when `sourceRef` was already claimed by an earlier delivery, in which
+   * case `lead` is the pre-existing row and nothing was inserted, reassigned,
+   * automated or alerted. Callers on a webhook path must check this: a
+   * re-delivery is success, not a new lead.
+   */
+  created: boolean;
+}> {
   const data = createLeadSchema.parse(rawData);
+
+  // Fast path for a redelivery. The insert below also carries the same
+  // guarantee for the case where two deliveries race, but checking first keeps
+  // the common retry from burning a lead number and re-running side effects.
+  if (data.sourceRef) {
+    const claimed = await db.query.leads.findFirst({ where: eq(leads.sourceRef, data.sourceRef) });
+    if (claimed) return { lead: claimed, duplicates: [], created: false };
+  }
 
   const duplicates = await findDuplicateLeadsByIdentity(data);
   const leadNo = await nextNumber('lead', 'LD');
@@ -235,10 +254,23 @@ export async function createLead(
     firstSeenAt: new Date(),
   };
 
-  let created: Lead | undefined;
+  // The pre-check above is an optimisation, not the guarantee: two deliveries
+  // of the same ref can both pass it. The unique index is what actually
+  // decides, and DO NOTHING turns the loser's insert into a no-op instead of a
+  // 500. A lead without a sourceRef can never conflict, since NULLs are
+  // distinct in the index, so the clause is only attached when one is present.
+  let inserted: Lead | undefined;
+  let claimedByRace = false;
   await db.transaction(async (tx) => {
-    const [c] = await tx.insert(leads).values(insert).returning();
-    created = c;
+    const q = insert.sourceRef
+      ? tx.insert(leads).values(insert).onConflictDoNothing({ target: leads.sourceRef })
+      : tx.insert(leads).values(insert);
+    const [c] = await q.returning();
+    if (!c) {
+      claimedByRace = true;
+      return;
+    }
+    inserted = c;
     await tx.insert(leadStatusHistory).values({
       leadId: c.id,
       toStatus: 'NEW',
@@ -254,7 +286,19 @@ export async function createLead(
     });
   });
 
-  if (!created) throw new ApiError(500, 'Failed to create lead');
+  if (claimedByRace) {
+    // Another delivery inserted the same ref between the pre-check and here.
+    // Re-read it and report the redelivery as such. Returning inside the same
+    // function keeps the loser from running assignment, automations, audit or
+    // the owner alert, which is what would otherwise turn a retry into a
+    // duplicate email to a real owner.
+    const winner = await db.query.leads.findFirst({ where: eq(leads.sourceRef, insert.sourceRef!) });
+    if (!winner) throw new ApiError(500, 'Failed to create lead');
+    return { lead: winner, duplicates: [], created: false };
+  }
+
+  if (!inserted) throw new ApiError(500, 'Failed to create lead');
+  const created: Lead = inserted;
 
   if (duplicates.length) {
     for (const d of duplicates) {
@@ -278,7 +322,13 @@ export async function createLead(
     newValue: { leadNo, name: created.name, source: created.source },
   });
 
-  return { lead: created, duplicates };
+  // Detached on purpose: an alert failure must never fail or roll back a real
+  // lead. Fires after assignment so the alert can resolve the owner.
+  void notifyOwnerOfNewLead(created).catch((err) =>
+    console.error('[leadAlerts] owner alert failed', err),
+  );
+
+  return { lead: created, duplicates, created: true };
 }
 
 export async function updateLead(actor: Actor, id: string, rawData: unknown): Promise<Lead | null> {
@@ -305,7 +355,27 @@ export async function updateLead(actor: Actor, id: string, rawData: unknown): Pr
   if (data.notes !== undefined) patch.notes = data.notes ?? null;
   if (data.sourceRef !== undefined) patch.sourceRef = data.sourceRef ?? null;
 
-  const [updated] = await db.update(leads).set({ ...patch, updatedAt: new Date() }).where(eq(leads.id, id)).returning();
+  // source_ref carries a unique index, so only one real claim may exist.
+  // A 409 beats a raw unique-violation 500, and the NOT EXISTS guard below
+  // keeps the check race-safe: the claim only lands when no other lead (this
+  // one included) holds the ref, so a concurrent claimant wins cleanly.
+  let where: ReturnType<typeof eq> | ReturnType<typeof and> = eq(leads.id, id);
+  if (patch.sourceRef) {
+    const claimant = await db.query.leads.findFirst({
+      where: and(eq(leads.sourceRef, patch.sourceRef as string), ne(leads.id, id)),
+      columns: { id: true, leadNo: true },
+    });
+    if (claimant) {
+      throw new ApiError(409, `Source reference is already claimed by ${claimant.leadNo}`, 'SOURCE_REF_CONFLICT');
+    }
+    where = and(eq(leads.id, id), sql`not exists (select 1 from ${leads} l where l.source_ref = ${patch.sourceRef} and l.id <> ${id})`);
+  }
+  const [updated] = await db.update(leads).set({ ...patch, updatedAt: new Date() }).where(where).returning();
+
+  if (patch.sourceRef && !updated) {
+    const owner = await db.query.leads.findFirst({ where: eq(leads.sourceRef, patch.sourceRef as string), columns: { leadNo: true } });
+    throw new ApiError(409, `Source reference is already claimed by ${owner?.leadNo ?? 'another lead'}`, 'SOURCE_REF_CONFLICT');
+  }
 
   await db.insert(leadActivities).values({
     leadId: id,
@@ -315,6 +385,7 @@ export async function updateLead(actor: Actor, id: string, rawData: unknown): Pr
     meta: { fields: Object.keys(patch) },
   });
   await writeAudit({ actor, action: 'UPDATE', entity: 'lead', entityId: id, oldValue: existing, newValue: updated });
+  await markLeadTouched(id);
   return updated ?? null;
 }
 
@@ -358,6 +429,7 @@ export async function changeStatus(actor: Actor, id: string, rawData: unknown): 
     });
   }
   await writeAudit({ actor, action: 'STATUS_CHANGE', entity: 'lead', entityId: id, oldValue: { status: from }, newValue: { status: to } });
+  await markLeadTouched(id);
   return updated as Lead;
 }
 
@@ -372,6 +444,7 @@ export async function addLeadActivity(actor: Actor, id: string, rawData: unknown
     performedById: actor.user.id,
     meta: data.meta ?? {},
   });
+  await markLeadTouched(id);
 }
 
 export async function mergeLeads(actor: Actor, sourceId: string, targetId: string): Promise<Lead> {

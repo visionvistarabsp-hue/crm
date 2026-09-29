@@ -7,6 +7,7 @@ import { listAssignableUsers, assertAssignableTarget } from './users';
 import { getSetting } from '../settings';
 import { assignmentConfigSchema } from '../validators';
 import { writeAudit } from '../audit';
+import { markLeadTouched } from '../leadAlerts';
 
 export type AssignmentMode = 'ROUND_ROBIN' | 'SOURCE_BASED' | 'PROJECT_BASED' | 'MANUAL';
 
@@ -33,6 +34,13 @@ export async function assignLead(input: LeadAssignmentInput): Promise<{ userId: 
   if (forcedUserId) {
     await assertAssignableTarget(actor.user, forcedUserId);
     await applyAssignment(lead.id, lead.ownerId, forcedUserId, rule ?? 'MANUAL', actor);
+    // A human deliberately routing a lead is engagement, so it counts as a
+    // touch. Deliberately not done for the rule-based path below: an
+    // auto-assignment on create is a machine decision and must leave the lead
+    // eligible for escalation. Marking it would also be unreachable here,
+    // because `applyAssignment` writes its activity row directly and so never
+    // passes through `addLeadActivity`.
+    await markLeadTouched(lead.id);
     return { userId: forcedUserId, rule: rule ?? 'MANUAL' };
   }
 

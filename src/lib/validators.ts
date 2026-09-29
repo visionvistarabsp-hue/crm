@@ -104,6 +104,7 @@ export const webhookLeadSchema = z.object({
   propertyType: z.string().optional(),
   requirement: z.string().optional(),
   sourceRef: z.string().optional(),
+  source: z.enum(LEAD_SOURCES).optional(),
   raw: z.record(z.unknown()).optional(),
 });
 

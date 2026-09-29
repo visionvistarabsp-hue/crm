@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useApi } from '@/lib/useApi';
 import { ApiErrorView, fetcher } from '@/lib/fetcher';
 import { Button, Card, CardHeader, Field, Input, PageHeader, Spinner } from '@/components/ui';
@@ -29,6 +30,18 @@ export default function SettingsPage() {
     try { await fetcher(`/api/automation-rules/${id}`, { method: 'POST' }); await reload(); }
     catch (e) { alert((e as Error).message); }
     finally { setWorkingId(null); }
+  };
+
+  const me = useApi<{ newLeadAlertsEnabled: boolean }>('/api/auth/me');
+  const [savingAlerts, setSavingAlerts] = useState(false);
+
+  const toggleLeadAlerts = async (next: boolean) => {
+    setSavingAlerts(true);
+    try {
+      await fetcher('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ newLeadAlertsEnabled: next }) });
+      await me.reload();
+    } catch (e) { alert((e as Error).message); }
+    finally { setSavingAlerts(false); }
   };
 
   return (
@@ -62,6 +75,15 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader title="Integration keys" subtitle="Meta Webhook secret for lead capture" />
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl bg-surface p-3 shadow-clay-sm">
+          <p className="text-xs text-ink-faint">Encrypted keys such as the Resend API key are managed separately.</p>
+          <Link
+            href="/settings/keys"
+            className="shrink-0 text-sm font-semibold text-primary-700 hover:underline"
+          >
+            Email keys
+          </Link>
+        </div>
         <form
           className="space-y-4"
           onSubmit={async (e) => {
@@ -76,6 +98,27 @@ export default function SettingsPage() {
           </Field>
           <Button type="submit">Save keys</Button>
         </form>
+      </Card>
+
+      <Card className="mt-6">
+        <CardHeader title="Your notifications" subtitle="Personal preferences, for you only" />
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={me.data?.newLeadAlertsEnabled ?? true}
+            disabled={savingAlerts || me.loading}
+            onChange={(e) => toggleLeadAlerts(e.target.checked)}
+          />
+          <span>
+            <span className="block font-medium">Email me about new leads</span>
+            <span className="block text-sm opacity-70">
+              Turn this off and you stop receiving both the alert when a lead is assigned to you and
+              the later reminder to your manager. Separate from follow-up reminders, which are
+              controlled elsewhere.
+            </span>
+          </span>
+        </label>
       </Card>
     </div>
   );

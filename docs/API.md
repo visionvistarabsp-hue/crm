@@ -1,6 +1,6 @@
 # API Reference
 
-Base URL: `APP_BASE_URL` (e.g. `http://localhost:3000`).
+Base URL: the app's public origin (e.g. `http://localhost:3000`). Paths below are relative to it.
 
 ## Conventions
 
@@ -15,7 +15,7 @@ Base URL: `APP_BASE_URL` (e.g. `http://localhost:3000`).
 |---|---|---|
 | GET | `/api/health` | `200 { ok: true }` — used by deploy health checks |
 | POST | `/api/webhooks/leads` | lead intake; requires header `x-webhook-secret: <WEBHOOK_SECRET>` |
-| GET/POST | `/api/internal/process-queue` | background job drainer (due follow-up jobs, max 25); protect with cron-only network access |
+| GET/POST | `/api/internal/process-queue` | background job drainer (due follow-up jobs, max 25). **Not** public: requires `Authorization: Bearer $CRON_SECRET`, else `403` (fails closed when `CRON_SECRET` is unset) |
 
 ---
 

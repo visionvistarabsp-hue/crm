@@ -10,6 +10,7 @@ import { ApiError, type Actor, resolveVisibleUserIds } from '@/lib/api';
 import { writeAudit } from '@/lib/audit';
 import { db } from '@/lib/db';
 import { bookings, leadActivities, leads, payments, salesTargets, users } from '@/lib/db/schema';
+import { NOT_HIDDEN_DRAFT } from './easy';
 import { assertAssignableTarget } from './users';
 import {
   achievement,
@@ -144,6 +145,10 @@ async function actualsFor(
     gte(bookings.bookingDate, from),
     lt(bookings.bookingDate, to),
     sql`${bookings.status} <> 'CANCELLED'`,
+    // Hidden placeholder drafts are not bookings, so they must not inflate
+    // bookingCount. Collections against them are still real and stay counted
+    // below - only the booking side is filtered.
+    NOT_HIDDEN_DRAFT,
     projectId ? eq(bookings.projectId, projectId) : undefined,
   ];
   const bookingRows = await db

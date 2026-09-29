@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withPublic } from '@/lib/handlers';
-import { processLeadgen } from '@/lib/services/meta';
+import { metaConfig, processLeadgen } from '@/lib/services/meta';
+import { verifyMetaSignature } from '@/lib/metaSignature';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,8 +37,39 @@ export const GET = withPublic(async (req: NextRequest) => {
 });
 
 export const POST = withPublic(async (req: NextRequest) => {
-  const body: any = await req.json().catch(() => null);
-  if (!body) return NextResponse.json({ error: { message: 'Invalid JSON' } }, { status: 400 });
+  // Read the raw bytes before any parsing. Meta signs the exact body it sent,
+  // so `req.json()` first would destroy the bytes the digest is computed over.
+  const raw = await req.text();
+  const { appSecret } = await metaConfig();
+  const signature = verifyMetaSignature(raw, req.headers.get('x-hub-signature-256'), appSecret);
+
+  if (!signature.ok) {
+    // A missing secret is our misconfiguration, not a bad request, so it is a
+    // 503 and never a silent pass-through. 401s are not retried by Meta, which
+    // is what we want: replaying a forged delivery achieves nothing.
+    const status = signature.reason === 'missing-secret' ? 503 : 401;
+    return NextResponse.json(
+      {
+        error: {
+          message:
+            signature.reason === 'missing-secret'
+              ? 'META_APP_SECRET not configured — inbound lead events cannot be authenticated'
+              : 'X-Hub-Signature-256 verification failed',
+          reason: signature.reason,
+        },
+      },
+      { status },
+    );
+  }
+
+  // Signature already passed, so a parse failure here is a genuinely malformed
+  // signed delivery rather than an attack, and 400 (no retry) is the right code.
+  let body: any;
+  try {
+    body = JSON.parse(raw);
+  } catch {
+    return NextResponse.json({ error: { message: 'Invalid JSON' } }, { status: 400 });
+  }
 
   const results: Array<{ leadgenId: string; created: boolean; leadId?: string }> = [];
   const errors: Array<{ source: string; error: string }> = [];

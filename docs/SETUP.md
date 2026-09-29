@@ -13,9 +13,14 @@ Copy `.env.example` to `.env` and fill in:
 | `DATABASE_URL` | Neon pooled connection string, e.g. `postgresql://user:pass@ep-xxx-pooler.us-east-2.aws.neon.tech/dbname?sslmode=require`. `require`/`prefer`/`verify-ca` are all treated as `verify-full` by the runtime (ddl/pg note). |
 | `AUTH_DEMO_MODE` | `"true"` bypasses password auth and signs you in as the seeded `demo` SUPER_ADMIN user. **Must be `false` in production.** |
 | `SESSION_TTL_DAYS` | Session lifetime in days (default `7`). |
-| `APP_BASE_URL` | Public URL of the app (e.g. `http://localhost:3000`). |
+| `CRON_SECRET` | Shared secret checked on `GET/POST /api/internal/process-queue` via the `Authorization: Bearer` header. Required in production — the route fails closed (403) without it, which silently stops scheduled jobs. Generate with `openssl rand -hex 32`. |
 | `R2_*` / `LOCAL_STORAGE_DIR` | Object storage. Leave `R2_*` empty to use the local-disk fallback (dev only). |
-| `WEBHOOK_SECRET` | Shared secret checked on `/api/webhooks/leads` via the `x-webhook-secret` header. |
+| `WEBHOOK_SECRET` | Shared secret checked on `/api/webhooks/leads` via the `x-webhook-secret` header. Unset means the webhook accepts unauthenticated callers. |
+| `SETTINGS_ENCRYPTION_KEY` | 32-byte key (hex or base64) that encrypts integration secrets at rest. Required by Settings → Email keys; without it the key API returns `503`. `openssl rand -hex 32`. |
+| `RESEND_API_KEY` | Optional. Fallback for reminder emails when no key is stored in the database. Unset means the daily digest is skipped. |
+| `RESEND_FROM_EMAIL` / `RESEND_FROM_NAME` | Fallback sender used only when no key is stored. The address must be a verified Resend sender. |
+| `APP_TIMEZONE` | IANA timezone for "today" and the 09:00 digest send time (default `Asia/Kolkata`). |
+| `SIMPLE_UI_ENABLED` | `"true"` serves the phone-first flow to `SALES_EXECUTIVE` and redirects that role to `/home`. Default `"false"`. |
 
 ### Demo mode seeds
 
@@ -30,7 +35,7 @@ npm run db:seed            # optional demo dataset (destructive: wipes seeded da
 npm run db:push            # (optional) push schema diff via drizzle-kit
 ```
 
-The migration files live in `drizzle/`. Check constraints (status enums, source whitelist, money checks) are re-applied with `IF NOT EXISTS` so repeat runs never fail.
+The migration files live in `drizzle/` and are committed to the repo — `npm run db:migrate` reads them from disk, so a fresh clone can migrate without regenerating anything. Check constraints (status enums, source whitelist, money checks) are re-applied with `IF NOT EXISTS` so repeat runs never fail.
 
 ## 3. Creating the first user
 

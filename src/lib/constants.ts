@@ -322,6 +322,7 @@ export type Permission =
   | 'collections.view'
   | 'collections.manage'
   | 'receipts.issue'
+  | 'payments.record'
   | 'loans.view'
   | 'loans.manage'
   | 'commissions.manage'
@@ -347,7 +348,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'bookings.view', 'bookings.manage', 'bookings.cancel', 'cancellations.approve',
     'documents.manage', 'documents.verify', 'documents.download',
     'accounts.view', 'commissions.manage', 'commissions.approve', 'payouts.manage',
-    'targets.view', 'targets.manage', 'collections.view', 'collections.manage', 'receipts.issue',
+    'targets.view', 'targets.manage', 'collections.view', 'collections.manage', 'receipts.issue', 'payments.record',
     'loans.view', 'loans.manage',
     'reports.view', 'team.manage', 'integrations.manage', 'automation.manage', 'settings.manage', 'audit.view',
     'search.global', 'users.view',
@@ -361,7 +362,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'bookings.view', 'bookings.manage', 'bookings.cancel',
     'documents.manage', 'documents.download',
     'accounts.view', 'commissions.manage',
-    'targets.view', 'targets.manage', 'collections.view', 'receipts.issue', 'loans.view', 'loans.manage',
+    'targets.view', 'targets.manage', 'collections.view', 'receipts.issue', 'payments.record', 'loans.view', 'loans.manage',
     'reports.view', 'search.global', 'users.view',
   ],
   TEAM_LEADER: [
@@ -382,7 +383,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'bookings.view',
     'documents.manage', 'documents.download',
     'accounts.view',
-    'targets.view', 'collections.view', 'loans.view',
+    'targets.view', 'collections.view', 'loans.view', 'payments.record',
     'search.global',
   ],
   DOCUMENT_MANAGER: [
@@ -391,7 +392,7 @@ export const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
   ACCOUNTS: [
     'leads.view', 'customers.view', 'projects.manage', 'units.manage',
     'bookings.view', 'accounts.view', 'commissions.manage', 'commissions.approve', 'payouts.manage',
-    'targets.view', 'collections.view', 'collections.manage', 'receipts.issue', 'loans.view', 'loans.manage',
+    'targets.view', 'collections.view', 'collections.manage', 'receipts.issue', 'payments.record', 'loans.view', 'loans.manage',
     'reports.view', 'search.global', 'users.view',
   ],
   VIEW_ONLY: [

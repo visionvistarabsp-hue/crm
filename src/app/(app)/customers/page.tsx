@@ -1,9 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useApi } from '@/lib/useApi';
 import { ApiErrorView, fetcher } from '@/lib/fetcher';
-import { Button, Card, Dialog, EmptyState, Field, Input, PageHeader, Pagination, Spinner, StatusBadge, Table } from '@/components/ui';
+import { Button, Dialog, EmptyState, Field, Input, PageHeader, Pagination, Spinner, Table } from '@/components/ui';
 
 type Customer = {
   id: string; name: string; phone: string; email: string; type: string; status: string;
@@ -38,7 +39,7 @@ export default function CustomersPage() {
         <Table head={['Customer', 'Contact', 'Type', 'Source', 'Created']}>
           {data?.items?.map((c) => (
             <tr key={c.id} className="hover:bg-primary-50/40">
-              <td className="td"><p className="font-medium text-ink">{c.name}</p></td>
+              <td className="td"><Link href={`/customers/${c.id}`} className="font-medium text-primary hover:underline">{c.name}</Link></td>
               <td className="td">
                 <p className="text-ink-muted">{c.phone || '—'}</p>
                 <p className="text-xs text-ink-faint">{c.email || ''}</p>

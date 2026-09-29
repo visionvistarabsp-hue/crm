@@ -620,7 +620,9 @@ export async function getCollectionsReport(
       ),
     );
 
-  const projectIds = [...new Set(rows.map((r) => r.projectId))];
+  const projectIds = [...new Set(rows.map((r) => r.projectId))].filter(
+    (id): id is string => id !== null,
+  );
   const projectNames = new Map<string, string>();
   if (projectIds.length) {
     // Core select builder, not db.query: the relational builder miscompiles a
@@ -664,7 +666,7 @@ export async function getCollectionsReport(
         bookingId: r.m.bookingId,
         bookingNo: r.bookingNo,
         customerName: r.customerName,
-        projectName: projectNames.get(r.projectId) ?? '',
+        projectName: r.projectId ? (projectNames.get(r.projectId) ?? '') : '',
         salespersonName: r.salespersonId ? ownerNames.get(r.salespersonId) ?? null : null,
         name: r.m.name,
         dueDate: due,

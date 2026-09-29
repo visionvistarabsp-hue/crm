@@ -36,6 +36,12 @@ export const users = pgTable('users', {
   managerId: text('manager_id'),
   avatar: text('avatar'),
   isActive: boolean('is_active').notNull().default(true),
+  remindersEnabled: boolean('reminders_enabled').notNull().default(true),
+  // Real-time new-lead alerts, split from remindersEnabled on purpose: a user
+  // may want to mute the 12-hour digest while still being paged the moment a
+  // lead arrives, because the two answer different urgencies.
+  newLeadAlertsEnabled: boolean('new_lead_alerts_enabled').notNull().default(true),
+  reminderTime: text('reminder_time').notNull().default('09:00'),
   lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
   createdAt: now(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -191,6 +197,15 @@ export const leads = pgTable('leads', {
   sourceRef: text('source_ref'),
   metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
   createdById: text('created_by_id').references(() => users.id),
+  // Stamped by the first human interaction (edit, status change, logged
+  // activity). Null means nobody has engaged the lead yet, which is what the
+  // manager escalation scans for. Deliberately not set on INSERT: a lead that
+  // arrives already "handled" would never escalate.
+  firstTouchedAt: timestamp('first_touched_at', { withTimezone: true }),
+  // Stamped when the unclaimed-lead escalation is queued. Kept separate from
+  // the scan's dedupe key so an operator can see, in the row itself, whether
+  // escalation already happened - and why a lead is or is not still a candidate.
+  escalatedAt: timestamp('escalated_at', { withTimezone: true }),
   firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).defaultNow().notNull(),
   createdAt: now(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -203,6 +218,27 @@ export const leads = pgTable('leads', {
   index('idx_leads_project').on(t.projectId),
   index('idx_leads_priority').on(t.priority),
   index('idx_leads_created').on(t.createdAt),
+  // Partial index for the unclaimed-lead escalation scan, which only ever asks
+  // for leads that are still NEW, still untouched and not yet escalated - a
+  // small slice of the table. Plain indexes above already satisfy the
+  // `created_at` range, so this is purely an optimisation: without it every
+  // 5-minute cron tick re-reads the whole window and discards most of it.
+  index('idx_leads_unclaimed')
+    .on(t.createdAt)
+    .where(sql`${t.status} = 'NEW' AND ${t.firstTouchedAt} IS NULL AND ${t.escalatedAt} IS NULL`),
+  /**
+   * Provider webhook idempotency key.
+   *
+   * Webhooks are at-least-once: Meta (and every generic provider) will
+   * re-deliver on a non-2xx or a timeout, and can double-deliver even on a
+   * success. Without a unique key a retry silently creates a second lead, and
+   * after the alert work that second lead also emails a real owner.
+   *
+   * Nullable, and deliberately left plain: Postgres treats NULLs as distinct in
+   * a unique index, so manually created leads (no `source_ref`) are unlimited
+   * while any real provider ref is claimed exactly once.
+   */
+  uniqueIndex('uq_leads_source_ref').on(t.sourceRef),
 ]);
 
 export const leadsRelations = relations(leads, ({ one, many }) => ({
@@ -226,6 +262,19 @@ export const leadActivities = pgTable('lead_activities', {
 }, (t) => [
   index('idx_activities_lead').on(t.leadId),
   index('idx_activities_lead_created').on(t.leadId, t.createdAt),
+]);
+
+export const customerActivities = pgTable('customer_activities', {
+  id: id(),
+  customerId: text('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+  type: text('type').notNull().default('NOTE'),
+  note: text('note'),
+  meta: jsonb('meta').$type<Record<string, unknown>>().default({}),
+  performedById: text('performed_by_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_customer_activities_customer').on(t.customerId),
+  index('idx_customer_activities_customer_created').on(t.customerId, t.createdAt),
 ]);
 
 export const leadStatusHistory = pgTable('lead_status_history', {
@@ -313,6 +362,7 @@ export const followups = pgTable('followups', {
   index('idx_followups_scheduled').on(t.scheduledAt),
   index('idx_followups_status').on(t.status),
   index('idx_followups_assigned').on(t.assignedTo),
+  index('idx_followups_status_scheduled').on(t.status, t.scheduledAt),
 ]);
 
 export const followupsRelations = relations(followups, ({ one }) => ({
@@ -359,7 +409,7 @@ export const bookings = pgTable('bookings', {
   bookingNo: text('booking_no').notNull().unique(),
   customerId: text('customer_id').notNull().references(() => customers.id),
   leadId: text('lead_id').references(() => leads.id),
-  projectId: text('project_id').notNull().references(() => projects.id),
+  projectId: text('project_id').references(() => projects.id),
   towerId: text('tower_id').references(() => towers.id),
   unitId: text('unit_id').references(() => units.id),
   saleValue: money('sale_value').notNull(),
@@ -430,6 +480,28 @@ export const payments = pgTable('payments', {
 }, (t) => [
   index('idx_payments_booking').on(t.bookingId),
   index('idx_payments_customer').on(t.customerId),
+]);
+
+export const paymentDue = pgTable('payment_due', {
+  id: id(),
+  leadId: text('lead_id').references(() => leads.id, { onDelete: 'set null' }),
+  customerId: text('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+  bookingId: text('booking_id').references(() => bookings.id, { onDelete: 'set null' }),
+  amount: money('amount').notNull(),
+  dueDate: timestamp('due_date', { withTimezone: true }).notNull(),
+  status: text('status').notNull().default('PENDING'), // PENDING | PARTIAL | PAID | CANCELLED
+  paidAt: timestamp('paid_at', { withTimezone: true }),
+  paymentId: text('payment_id').references(() => payments.id, { onDelete: 'set null' }),
+  paidAmount: money('paid_amount'),
+  notes: text('notes'),
+  createdById: text('created_by_id').references(() => users.id),
+  createdAt: now(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_payment_due_status').on(t.status, t.dueDate),
+  index('idx_payment_due_customer').on(t.customerId),
+  index('idx_payment_due_lead').on(t.leadId),
+  index('idx_payment_due_booking').on(t.bookingId),
 ]);
 
 export const refunds = pgTable('refunds', {
@@ -682,10 +754,12 @@ export const backgroundJobs = pgTable('background_jobs', {
   runAt: timestamp('run_at', { withTimezone: true }).defaultNow().notNull(),
   lastError: text('last_error'),
   processedAt: timestamp('processed_at', { withTimezone: true }),
+  digestKey: text('digest_key'),
   createdAt: now(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [
   index('idx_jobs_status').on(t.status, t.runAt),
+  uniqueIndex('idx_jobs_digest_key').on(t.digestKey),
 ]);
 
 // Simple key/value counter used to mint sequential business numbers.
@@ -936,6 +1010,7 @@ export const customersRelations = relations(customers, ({ one, many }) => ({
   documents: many(documents),
   salesTargets: many(salesTargets),
   loans: many(loans),
+  activities: many(customerActivities),
 }));
 
 export const bookingsRelations = relations(bookings, ({ one, many }) => ({
@@ -1009,6 +1084,10 @@ export const leadStatusHistoryRelations = relations(leadStatusHistory, ({ one })
   lead: one(leads, { fields: [leadStatusHistory.leadId], references: [leads.id] }),
 }));
 
+export const customerActivitiesRelations = relations(customerActivities, ({ one }) => ({
+  customer: one(customers, { fields: [customerActivities.customerId], references: [customers.id] }),
+}));
+
 export const refundsRelations = relations(refunds, ({ one }) => ({
   cancellation: one(cancellations, { fields: [refunds.cancellationId], references: [cancellations.id] }),
   booking: one(bookings, { fields: [refunds.bookingId], references: [bookings.id] }),
@@ -1027,6 +1106,8 @@ export type Tower = typeof towers.$inferSelect;
 export type Unit = typeof units.$inferSelect;
 export type Customer = typeof customers.$inferSelect;
 export type CustomerInsert = typeof customers.$inferInsert;
+export type CustomerActivity = typeof customerActivities.$inferSelect;
+export type CustomerActivityInsert = typeof customerActivities.$inferInsert;
 export type Booking = typeof bookings.$inferSelect;
 export type BookingInsert = typeof bookings.$inferInsert;
 export type Cancellation = typeof cancellations.$inferSelect;

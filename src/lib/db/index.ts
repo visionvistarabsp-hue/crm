@@ -10,9 +10,19 @@ if (!connectionString) {
 const globalForDb = globalThis as unknown as { pool?: Pool; db?: ReturnType<typeof createDb> };
 
 function createPool(): Pool {
+  // On Vercel every serverless invocation opens its own pool, so a large
+  // per-instance max multiplies across concurrent lambdas and exhausts the
+  // database plan. Keep it small there and let the env override for a
+  // long-lived Node process or a bigger plan.
+  const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  const configured = Number(process.env.DB_POOL_MAX);
+  const max = Number.isFinite(configured) && configured > 0
+    ? Math.floor(configured)
+    : isServerless ? 2 : 20;
+
   return new Pool({
     connectionString,
-    max: 20,
+    max,
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
   });

@@ -4,6 +4,7 @@ import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { Actor } from '../api';
 import { leads, meetings, bookings, payments, customers, users, commissionSnapshots, cancellations, projects } from '../db/schema';
 import { resolveVisibleUserIds } from '../api';
+import { NOT_HIDDEN_DRAFT } from './easy';
 
 const num = (v: number | string | null | undefined): number => {
   const n = typeof v === 'string' ? parseFloat(v) : v;
@@ -156,7 +157,11 @@ export async function getDashboard(actor: Actor, filters: DashboardFilters = {})
 }
 
 async function bookingRows0(where: any) {
-  return db.select({ bookingDate: bookings.bookingDate, saleValue: bookings.saleValue, bookingAmount: bookings.bookingAmount, status: bookings.status }).from(bookings).where(where ?? sql`true`);
+  return db
+    .select({ bookingDate: bookings.bookingDate, saleValue: bookings.saleValue, bookingAmount: bookings.bookingAmount, status: bookings.status })
+    .from(bookings)
+    // Hidden placeholder drafts from the easy payment flow are not bookings.
+    .where(and(where, NOT_HIDDEN_DRAFT));
 }
 async function paymentRows0() {
   return db.select({ amount: payments.amount, status: payments.status, paymentDate: payments.paymentDate }).from(payments);

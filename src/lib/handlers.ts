@@ -19,6 +19,27 @@ function zodErrorResponse(err: unknown): NextResponse | null {
   );
 }
 
+/**
+ * Split a handler's return value into a response body and a status code.
+ *
+ * Handlers may return `{ ...body, status }` to pick a code, but only when the
+ * payload is an error envelope. Without this the code was silently discarded and
+ * every failure reached the client as a 200, so `res.ok` was true for a 400, a
+ * 403 and a 422 alike and callers had to sniff the body to tell them apart.
+ *
+ * The `error` guard is what keeps this safe: a success payload may legitimately
+ * carry a `status` field of its own (a lead's `status: 'NEW'`), and that must
+ * stay in the body rather than become the response code.
+ */
+function respondWith(body: unknown): [unknown, number] {
+  if (body === null || typeof body !== 'object') return [body, 200];
+  const { status, ...rest } = body as { status?: unknown };
+  if (typeof status === 'number' && 'error' in rest) {
+    return [rest, status];
+  }
+  return [body, 200];
+}
+
 /** Wrap a route handler with auth + consistent error mapping. */
 export function withApi(handler: Handler) {
   return async (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => {
@@ -26,7 +47,7 @@ export function withApi(handler: Handler) {
       const actor = await requireUser(req);
       const body = await handler(actor, req, ctx);
       if (body === undefined) return json({ ok: true });
-      return json(body);
+      return json(...respondWith(body));
     } catch (err) {
       if (err instanceof ApiError) {
         return NextResponse.json({ error: { message: err.message, code: err.code } }, { status: err.status });

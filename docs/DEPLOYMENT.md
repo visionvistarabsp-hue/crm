@@ -30,13 +30,42 @@ Run behind a reverse proxy (Caddy/Nginx) with HTTPS. `APP_BASE_URL` must match t
 ## Environment checklist (staging/production)
 
 - [ ] `AUTH_DEMO_MODE="false"` — never true in production
-- [ ] `APP_BASE_URL` = real public URL
 - [ ] `SESSION_TTL_DAYS` set to a sensible lifetime (default `7`)
+- [ ] `CRON_SECRET` set (32 random bytes, e.g. `openssl rand -hex 32`) — the job queue fails closed without it
 - [ ] `DATABASE_URL` points at the production Neon (pooled) endpoint
 - [ ] `R2_*` configured (document storage won't persist on local disk across instances)
 - [ ] `WEBHOOK_SECRET` set; documented in the provider's integration console
+- [ ] `SETTINGS_ENCRYPTION_KEY` set (32 bytes, e.g. `openssl rand -hex 32`) — required by Settings → Email keys; without it `PUT /api/settings/keys` returns `503` and nothing is stored
+- [ ] `RESEND_API_KEY` **or** a key saved in Settings → Email keys, if reminder digests are wanted
+- [ ] `APP_TIMEZONE` matches the business timezone (defaults to `Asia/Kolkata`)
+- [ ] `SIMPLE_UI_ENABLED` deliberately set — it is `"false"` by default
 - [ ] `.env` is NOT in git (see `.gitignore`)
 - [ ] `NODE_ENV=production`
+
+## Reminder digests
+
+One email per agent per local day summarises that agent's overdue follow-ups and
+outstanding payment dues. It is queued by the same `/api/internal/process-queue`
+scan described above and sent at 09:00 in `APP_TIMEZONE`, so no extra cron entry
+is needed — the existing 5-minute schedule picks it up. Re-running the scan on the
+same day is a no-op per agent, because each digest carries a
+`reminder-digest:<agentId>:<localDate>` key.
+
+Delivery is skipped entirely when no credential is configured, so reminders
+cannot fail the queue. The resolver prefers a key stored (AES-256-GCM encrypted)
+in the `integrations` table and falls back to the `RESEND_API_KEY` env var.
+`RESEND_FROM_EMAIL` must be a verified Resend sender; leave the from-name blank to
+let Resend default it.
+
+Rotating `SETTINGS_ENCRYPTION_KEY` makes every stored secret unreadable — re-save
+them from Settings → Email keys afterwards.
+
+## Simple UI
+
+`SIMPLE_UI_ENABLED="true"` opts `SALES_EXECUTIVE` into the phone-first flow at
+`/home`, `/today`, `/new-lead`, `/my-leads` and `/new-payment`, and redirects
+that role away from `/` to `/home`. Other roles are unaffected, and the flag is
+`"false"` by default, so deploying without setting it changes nothing.
 
 ## Before going live
 
@@ -47,13 +76,28 @@ Run behind a reverse proxy (Caddy/Nginx) with HTTPS. `APP_BASE_URL` must match t
 
 ## Scheduled jobs
 
-The app has no persistent queue — a scheduler must call the internal job endpoint on a timer (e.g. every 5 minutes):
+Jobs are persisted in the `background_jobs` table, but there is no in-process worker — nothing
+drains them on its own. A scheduler must call the internal job endpoint on a timer (every 5 minutes):
 
 ```
 GET/POST /api/internal/process-queue
 ```
 
-This processes due follow-up automation/reminder jobs (max 25 per invocation). Configure it with cron in your hosting provider; block public access with middleware (the path is whitelisted but callers should still only come from your platform).
+This processes due follow-up automation/reminder jobs (max 25 per invocation). The route authenticates itself with a shared secret and **fails closed**: it requires
+
+```
+Authorization: Bearer $CRON_SECRET
+```
+
+and returns `403` if `CRON_SECRET` is unset or the header does not match. Set the secret in the platform's env vars and configure the cron there; the secret is supplied automatically by Vercel Cron. A `403` in the cron logs almost always means `CRON_SECRET` is missing from the deployment, and the symptom is that scheduled jobs silently stop running.
+
+`vercel.json` already declares the schedule:
+
+```json
+{ "crons": [{ "path": "/api/internal/process-queue", "schedule": "*/5 * * * *" }] }
+```
+
+On other platforms (VPS, container) point cron at the URL yourself, e.g. `*/5 * * * * curl -fsS -H "Authorization: Bearer $CRON_SECRET" https://your-host/api/internal/process-queue`.
 
 ## Security notes
 

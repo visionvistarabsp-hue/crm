@@ -26,9 +26,9 @@ const PUBLIC_PREFIXES = [
   '/api/auth/session',
   '/api/health',
   '/api/webhooks',
+  // Cron-only. The route itself enforces CRON_SECRET and fails closed, so
+  // letting it past the edge guard is safe - the guard has no header check.
   '/api/internal/process-queue',
-  '/api/internal/queue-status',
-  '/api/queue/status',
 ];
 
 /** Prefixes Next.js serves itself. */

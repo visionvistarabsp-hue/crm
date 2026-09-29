@@ -2,6 +2,9 @@
   "name": "real-estate-crm",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "description": "Production-ready Real Estate Sales CRM - Next.js, Neon, Drizzle, Cloudflare R2",
   "scripts": {
     "dev": "next dev",
