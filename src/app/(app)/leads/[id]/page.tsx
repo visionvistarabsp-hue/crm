@@ -7,6 +7,7 @@ import { useApi } from '@/lib/useApi';
 import { ApiErrorView, fetcher } from '@/lib/fetcher';
 import { Badge, Button, Card, CardHeader, EmptyState, Input, Menu, Select, Spinner, StatusBadge, Textarea } from '@/components/ui';
 import LeadAiPanel from '@/components/LeadAiPanel';
+import LeadOperations from '@/components/LeadOperations';
 import { LEAD_STATUSES } from '@/lib/constants';
 
 type LeadDetail = {
@@ -24,9 +25,7 @@ export default function LeadDetailPage() {
   const router = useRouter();
   const id = params.id as string;
   const { data: lead, error, loading, reload } = useApi<LeadDetail>(`/api/leads/${id}`, { deps: [id] });
-  const { data: activities, reload: reloadActivities } = useApi<{ items: any[] }>(`/api/leads/${id}/activities`, { deps: [id] });
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState('');
   const [newStatus, setNewStatus] = useState('');
   const [assignUser, setAssignUser] = useState('');
 
@@ -47,7 +46,7 @@ export default function LeadDetailPage() {
     setBusy(true);
     try {
       await fn();
-      await Promise.all([reload(), reloadActivities()]);
+      await reload();
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -102,33 +101,7 @@ export default function LeadDetailPage() {
             {lead.tags?.length ? <div className="mt-3 flex gap-1.5">{lead.tags.map((t) => <Badge key={t}>{t}</Badge>)}</div> : null}
           </Card>
 
-          <Card>
-            <CardHeader title="Activity" subtitle="Notes, status changes and events" />
-            <form
-              className="mb-4 flex items-start gap-2"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (!note.trim()) return;
-                await act(() => fetcher(`/api/leads/${id}/activities`, { method: 'POST', body: JSON.stringify({ type: 'NOTE', note }) }));
-                setNote('');
-              }}
-            >
-              <Input className="flex-1" placeholder="Add a note…" value={note} onChange={(e) => setNote(e.target.value)} />
-              <Button type="submit" disabled={busy}>Add</Button>
-            </form>
-            <div className="space-y-3">
-              {activities?.items?.map((a, i) => (
-                <div key={a.id ?? i} className="flex gap-3 rounded-2xl bg-clay-deep p-3 shadow-clay-inset-sm">
-                  <Badge tone={a.type === 'STATUS_CHANGE' ? 'purple' : a.type === 'CREATE' ? 'green' : 'gray'}>{a.type}</Badge>
-                  <div className="min-w-0">
-                    <p className="text-sm text-ink">{a.note ?? a.title ?? a.type}</p>
-                    <p className="text-xs text-ink-faint">{new Date(a.createdAt).toLocaleString('en-IN')}</p>
-                  </div>
-                </div>
-              ))}
-              {activities && activities.items.length === 0 && <EmptyState title="No activity yet" />}
-            </div>
-          </Card>
+          <LeadOperations leadId={id} />
         </div>
 
         <div className="space-y-6">
